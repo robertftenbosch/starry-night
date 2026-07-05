@@ -109,7 +109,7 @@ class TimeManager:
 
     def toggle_playback(self):
         """Toggle time playback"""
-        self.is_playing = not self.is.playing
+        self.is_playing = not self.is_playing
 
     def set_time_scale(self, scale_index: int):
         """Set time scale by index"""
