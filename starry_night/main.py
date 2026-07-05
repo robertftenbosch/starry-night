@@ -59,7 +59,10 @@ class CelestialObject:
         """Update object position based on orbital mechanics"""
         if self.orbital_period > 0:
             # Update angle based on orbital period and time delta
-            self.angle += (time_delta / self.orbital_period) * 0.01  # Adjust speed factor as needed
+            # Convert orbital period from days to radians per second
+            # 1 orbit = 2π radians, period is in days, time_delta is in seconds
+            orbital_speed = (2 * math.pi) / (self.orbital_period * 86400)  # radians per second
+            self.angle += orbital_speed * time_delta
 
     def draw(self, surface, mouse_pos=None, time_scale=1.0):
         """Draw the celestial object"""
@@ -341,7 +344,8 @@ class StarryNightApp:
             obj.draw(screen, self.mouse_pos, self.time_manager.time_scale)
 
         # Draw compass
-        self.compass.draw(screen)
+        if hasattr(self, 'compass'):
+            self.compass.draw(screen)
 
         # Draw title
         font = pygame.font.SysFont(None, 48)
