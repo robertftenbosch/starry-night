@@ -30,6 +30,7 @@ LIGHT_BLUE = (173, 216, 230)
 CYAN = (0, 255, 255)
 PINK = (255, 192, 203)
 GRAY = (128, 128, 128)
+DARK_GRAY = (64, 64, 64)
 
 @dataclass
 class CelestialObject:
@@ -108,7 +109,7 @@ class TimeManager:
 
     def toggle_playback(self):
         """Toggle time playback"""
-        self.is_playing = not self.is_playing
+        self.is_playing = not self.is.playing
 
     def set_time_scale(self, scale_index: int):
         """Set time scale by index"""
@@ -137,6 +138,52 @@ class TimeManager:
         self.end_time = end_time
         self.current_time = start_time
 
+class Compass:
+    """Compass system for celestial orientation"""
+
+    def __init__(self, center_x, center_y, radius):
+        self.center_x = center_x
+        self.center_y = center_y
+        self.radius = radius
+        self.directions = {
+            0: "N",  # North
+            90: "E", # East
+            180: "S", # South
+            270: "W" # West
+        }
+
+    def draw(self, surface):
+        """Draw the compass"""
+        # Draw compass circle
+        pygame.draw.circle(surface, WHITE, (self.center_x, self.center_y), self.radius, 2)
+
+        # Draw direction markers
+        for angle in range(0, 360, 15):  # Every 15 degrees
+            rad_angle = math.radians(angle)
+            x1 = self.center_x + (self.radius - 10) * math.cos(rad_angle)
+            y1 = self.center_y + (self.radius - 10) * math.sin(rad_angle)
+            x2 = self.center_x + self.radius * math.cos(rad_angle)
+            y2 = self.center_y + self.radius * math.sin(rad_angle)
+
+            # Draw marker line
+            pygame.draw.line(surface, WHITE, (x1, y1), (x2, y2), 2)
+
+            # Draw direction labels
+            if angle in self.directions:
+                label_x = self.center_x + (self.radius + 20) * math.cos(rad_angle)
+                label_y = self.center_y + (self.radius + 20) * math.sin(rad_angle)
+                font = pygame.font.SysFont(None, 24)
+                text = font.render(self.directions[angle], True, WHITE)
+                surface.blit(text, (label_x - text.get_width() // 2, label_y - text.get_height() // 2))
+
+        # Draw center point
+        pygame.draw.circle(surface, WHITE, (self.center_x, self.center_y), 5)
+
+        # Draw north indicator
+        font = pygame.font.SysFont(None, 24)
+        north_text = font.render("N", True, WHITE)
+        surface.blit(north_text, (self.center_x - north_text.get_width() // 2, self.center_y - self.radius - 30))
+
 class StarryNightApp:
     """Main application class for the starry night viewer"""
 
@@ -149,6 +196,7 @@ class StarryNightApp:
         self.show_controls = True
         self.selected_object = None
         self.object_visibility = {}
+        self.compass = Compass(WIDTH - 100, 100, 60)
         self.create_celestial_objects()
         self.setup_object_visibility()
 
@@ -292,6 +340,9 @@ class StarryNightApp:
         for obj in self.objects:
             obj.draw(screen, self.mouse_pos, self.time_manager.time_scale)
 
+        # Draw compass
+        self.compass.draw(screen)
+
         # Draw title
         font = pygame.font.SysFont(None, 48)
         title = font.render("Starry Night - Celestial Viewer", True, WHITE)
@@ -309,7 +360,7 @@ class StarryNightApp:
 
         # Draw instructions
         font = pygame.font.SysFont(None, 24)
-        instructions = font.render("Controls: SPACE (play/pause), R (reset), UP/DOWN (speed), C (toggle controls), T (toggle object)", True, WHITE)
+        instructions = font.render("Controls: SPACE (play/pause), R (reset), UP/DOWN (speed), C (toggle controls), T (toggle object), ESC (quit)", True, WHITE)
         screen.blit(instructions, (WIDTH // 2 - instructions.get_width() // 2, HEIGHT - 40))
 
         pygame.display.flip()
