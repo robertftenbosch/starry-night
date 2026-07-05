@@ -54,13 +54,15 @@ starry-night
 
 ## Using the Application
 
-1. The application opens in a window showing a dome-like visualization of the night sky
-2. Hover your mouse over any celestial object (star, planet, etc.)
-3. Information about the object will appear including:
-   - Object name
-   - Distance from Earth (in light years)
-   - Magnitude (brightness)
-4. Close the window by clicking the close button or pressing Ctrl+C in the terminal
+1. The application opens in a resizable window showing the night sky as seen from the ground, with a horizon line and N/E/S/W markers
+2. **Look around** by clicking and dragging the mouse (the sky follows your mouse) or with the arrow keys
+3. **Zoom** with the scroll wheel
+4. **Hover** over any celestial object for a quick tooltip; **click** it for a detail panel with:
+   - Object name and type
+   - Distance from Earth (light-years, or AU for planets)
+   - Magnitude (brightness) and orbital period
+5. **Play time** with SPACE and change speed with + / -; planets drift along the sky according to their orbital periods. R resets the time
+6. Other keys: T hides/shows the selected object, L toggles labels, C toggles the control panel, ESC deselects (or quits when nothing is selected)
 
 ## Customization
 
