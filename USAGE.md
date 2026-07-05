@@ -1,12 +1,13 @@
 # Starry Night - Celestial Viewer Usage Guide
 
 ## Overview
-Starry Night is a desktop application that displays celestial objects in a dome-like starry night visualization. You can hover over objects to see additional information about them.
+Starry Night is a desktop planetarium that shows the real night sky for your location. The sky rotates with (simulated) time, the Sun/Moon/planets follow real ephemerides, and you can click any object for details.
 
 ## Features
-- Dome-like visualization of the night sky
-- Display of celestial object names and information on hover
-- Support for stars, planets, and notable celestial objects
+- Real star positions (J2000 catalog) with 21 constellation figures
+- Sun, Moon (with phase), and all seven planets from real ephemerides
+- Day/night cycle with twilight colors; stars fade with the brightening sky
+- Time playback from real-time up to a month per second
 - Linux installer support
 
 ## Installation
@@ -54,15 +55,16 @@ starry-night
 
 ## Using the Application
 
-1. The application opens in a resizable window showing the night sky as seen from the ground, with a horizon line and N/E/S/W markers
+1. The application opens in a resizable window showing the sky as it looks right now from your location (default: Amsterdam; use `--lat`/`--lon` for elsewhere), with a horizon line and N/E/S/W markers
 2. **Look around** by clicking and dragging the mouse (the sky follows your mouse) or with the arrow keys
 3. **Zoom** with the scroll wheel
 4. **Hover** over any celestial object for a quick tooltip; **click** it for a detail panel with:
-   - Object name and type
-   - Distance from Earth (light-years, or AU for planets)
-   - Magnitude (brightness) and orbital period
-5. **Play time** with SPACE and change speed with + / -; planets drift along the sky according to their orbital periods. R resets the time
-6. Other keys: T hides/shows the selected object, L toggles labels, C toggles the control panel, ESC deselects (or quits when nothing is selected)
+   - Object name, type, and constellation
+   - Distance from Earth (light-years, AU for planets, km for the Moon)
+   - Magnitude (brightness) and current azimuth/altitude
+   - The Moon additionally shows its phase and illumination
+5. **Play time** with SPACE and change speed with + / -; the sky rotates as the Earth turns, the Moon cycles through phases, and planets wander. R resets the time
+6. Other keys: K toggles constellation figures, L toggles labels, T hides/shows the selected object, C toggles the control panel, ESC deselects (or quits when nothing is selected)
 
 ## Customization
 
@@ -74,8 +76,6 @@ The application currently comes with a predefined set of celestial objects. To c
 ## Requirements
 - Python 3.8 or higher
 - Pygame 2.0.0 or higher
-- Requests library
-- NumPy 1.20.0 or higher
 
 ## Troubleshooting
 
@@ -85,7 +85,7 @@ Make sure the application is properly installed and that the PATH includes the d
 ### If you get pygame errors
 Make sure you have all the required dependencies installed:
 ```bash
-pip install pygame requests numpy
+pip install pygame
 ```
 
 ### If the application doesn't start
