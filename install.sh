@@ -25,6 +25,28 @@ if ! command -v pip3 &> /dev/null; then
     exit 1
 fi
 
+# Try to detect the package manager and install SDL dependencies
+echo "Checking for required system dependencies..."
+if command -v apt-get &> /dev/null; then
+    # Debian/Ubuntu
+    echo "Installing SDL development libraries for Debian/Ubuntu..."
+    sudo apt-get update
+    sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
+elif command -v yum &> /dev/null; then
+    # Red Hat/CentOS/Fedora
+    echo "Installing SDL development libraries for Red Hat/CentOS/Fedora..."
+    sudo yum install -y SDL2-devel SDL2_image-devel SDL2_mixer-devel SDL2_ttf-devel
+elif command -v dnf &> /dev/null; then
+    # Fedora
+    echo "Installing SDL development libraries for Fedora..."
+    sudo dnf install -y SDL2-devel SDL2_image-devel SDL2_mixer-devel SDL2_ttf-devel
+else
+    echo "Warning: Could not detect package manager. Please install SDL2 development libraries manually:"
+    echo "  Debian/Ubuntu: sudo apt-get install libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev"
+    echo "  Red Hat/CentOS: sudo yum install SDL2-devel SDL2_image-devel SDL2_mixer-devel SDL2_ttf-devel"
+    echo "  Fedora: sudo dnf install SDL2-devel SDL2_image-devel SDL2_mixer-devel SDL2_ttf-devel"
+fi
+
 # Create installation directory
 INSTALL_DIR="$HOME/.local/share/starry-night"
 mkdir -p "$INSTALL_DIR"
@@ -41,6 +63,9 @@ python3 -m venv "$INSTALL_DIR/venv"
 echo "Installing dependencies..."
 source "$INSTALL_DIR/venv/bin/activate"
 pip install --upgrade pip
+pip install pygame requests numpy
+
+# Install the application in development mode
 pip install -e "$INSTALL_DIR"
 
 # Create desktop entry
