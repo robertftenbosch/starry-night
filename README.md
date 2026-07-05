@@ -1,16 +1,18 @@
 # Starry Night - Celestial Viewer
 
-A desktop application that displays celestial objects in a dome-like starry night visualization with interactive controls and time playback capabilities.
+A desktop planetarium that shows the real night sky for your location, with interactive navigation and time playback.
 
 ## Features
 
-- **True 3D Sky Sphere**: Objects live on a celestial sphere (azimuth/altitude) and are projected through a real camera, so rotating and zooming actually move the sky
-- **Celestial Objects**: Background stars, planets, notable stars, and galaxies
-- **Time Playback**: Play through time with adjustable speeds (real-time up to 1 year/s); planets drift along the sky according to their orbital periods
+- **The Real Sky**: Stars come from a catalog with true J2000 coordinates; the whole sky rotates with (simulated) time as the Earth turns, matching what you would actually see outside
+- **Constellations**: Stick figures and names for 21 well-known constellations (Orion, Ursa Major, Cassiopeia, Cygnus, Crux, ...)
+- **Sun, Moon & Planets**: Computed from real ephemerides — the Moon shows its current phase, and all seven planets follow their Keplerian orbits
+- **Day/Night Cycle**: The sky brightens through dawn, turns blue at day, and glows orange at sunset; stars fade in and out with twilight
+- **Time Playback**: Play through time from real-time up to a month per second — watch stars rise and set, the Moon cycle through phases, and planets wander
 - **Mouse & Keyboard Navigation**: Drag (or use the arrow keys) to look around, scroll to zoom
 - **Object Selection**: Click any object for a detail panel; hover for a quick tooltip
 - **Horizon & Compass**: A horizon line with N/E/S/W markers plus a compass that rotates with your viewing direction
-- **Resizable Window**: The view adapts when you resize the window
+- **Observer Location**: Defaults to Amsterdam; set your own with `--lat` and `--lon`
 
 ## Installation
 
@@ -68,6 +70,11 @@ After installation, run the application with:
 starry-night
 ```
 
+By default the sky is computed for Amsterdam. For another location, pass your coordinates (degrees, east/north positive):
+```bash
+starry-night --lat 40.7 --lon -74.0   # New York
+```
+
 ## Usage Instructions
 
 ### Controls
@@ -77,17 +84,23 @@ starry-night
 - **Spacebar**: Start/pause time playback
 - **+ / -**: Change time speed
 - **R**: Reset to start time
-- **T**: Toggle visibility of the selected object
+- **K**: Toggle constellation figures and names
 - **L**: Toggle object labels
+- **T**: Toggle visibility of the selected object
 - **C**: Toggle the control panel
 - **ESC**: Deselect object, or quit when nothing is selected
 
 ### Navigation
 1. **View Rotation**: Click and drag with the mouse (or use the arrow keys) — the sky follows your mouse
 2. **Zoom**: Use the scroll wheel to zoom between wide-angle and close-up views
-3. **Time Playback**: Press SPACE and adjust the speed with + / - to watch planets drift along the sky
-4. **Object Selection**: Click on celestial objects to see distance, magnitude, and orbital data
+3. **Time Playback**: Press SPACE and adjust the speed with + / - to watch the sky rotate, the Moon change phase, and planets wander along the ecliptic
+4. **Object Selection**: Click on celestial objects to see constellation, distance, magnitude, and current azimuth/altitude
 5. **Orientation**: Use the horizon markers (N/E/S/W) and the compass in the top-right corner; the compass rotates with your viewing direction
+
+### Tips
+- Around midnight, look south for the season's constellations (Orion in winter, Cygnus and Lyra in summer)
+- Set the speed to "1 day/s" and watch the Moon race through its phases
+- The status bar shows the sun's altitude and the current moon phase
 
 ### Information Display
 - Hover over any celestial object to see its name and information
@@ -104,8 +117,6 @@ The application can be customized by modifying:
 ## Requirements
 - Python 3.8 or higher
 - Pygame 2.0.0 or higher
-- Requests library
-- NumPy 1.20.0 or higher
 
 ## Troubleshooting
 
@@ -115,7 +126,7 @@ Make sure the application is properly installed and that the PATH includes the d
 ### If you get pygame errors
 Make sure you have all the required dependencies installed:
 ```bash
-pip install pygame requests numpy
+pip install pygame
 ```
 
 ### If the application doesn't start
@@ -130,12 +141,21 @@ starry_night/
 ├── starry_night/              # Main application package
 │   ├── __init__.py
 │   ├── __main__.py
-│   └── main.py               # Main application logic
+│   ├── main.py               # Application, rendering, and UI
+│   ├── astronomy.py          # Sidereal time, coordinates, ephemerides
+│   └── catalog.py            # Star catalog and constellation figures
+├── tests/                    # Test suite (pytest)
 ├── install.sh                # Linux installer script
 ├── setup.py                  # Python package configuration
 ├── requirements.txt          # Required dependencies
 ├── README.md                 # This file
 └── USAGE.md                  # Detailed usage instructions
+```
+
+## Running the Tests
+```bash
+pip install pytest
+python -m pytest tests/
 ```
 
 ## License
