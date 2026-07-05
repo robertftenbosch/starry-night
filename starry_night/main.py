@@ -1,468 +1,571 @@
 """
 Main application file for Starry Night - Celestial Viewer
+
+Objects live on a celestial sphere (azimuth/altitude). A camera with
+yaw/pitch/fov projects them onto the screen, so dragging the mouse truly
+rotates the view and the scroll wheel zooms.
 """
 import pygame
 import sys
 import math
 import random
 import datetime
-from typing import List, Tuple, Dict, Any
-from dataclasses import dataclass
-
-# Initialize pygame
-pygame.init()
-
-# Screen dimensions
-WIDTH, HEIGHT = 1200, 800
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Starry Night - Celestial Viewer")
+from typing import List, Tuple, Optional
+from dataclasses import dataclass, field
 
 # Colors
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
-BLUE = (0, 100, 255)
-YELLOW = (255, 255, 0)
-RED = (255, 0, 0)
+BLUE = (100, 160, 255)
+YELLOW = (255, 230, 120)
+RED = (255, 90, 70)
 ORANGE = (255, 165, 0)
-GREEN = (0, 255, 0)
-PURPLE = (128, 0, 128)
+PURPLE = (190, 120, 255)
 LIGHT_BLUE = (173, 216, 230)
-CYAN = (0, 255, 255)
-PINK = (255, 192, 203)
+CYAN = (120, 230, 255)
 GRAY = (128, 128, 128)
-DARK_GRAY = (64, 64, 64)
 LIGHT_GRAY = (200, 200, 200)
+HORIZON_COLOR = (70, 90, 120)
+GROUND_COLOR = (18, 24, 20)
+PANEL_BG = (18, 22, 40, 215)
+PANEL_BORDER = (110, 130, 180)
+ACCENT = (255, 210, 100)
+
 
 @dataclass
 class CelestialObject:
-    """Represents a celestial object with position and properties"""
+    """A celestial object positioned on the sky sphere (azimuth/altitude in radians)."""
 
     name: str
-    x: float
-    y: float
+    azimuth: float
+    altitude: float
     size: float
     color: Tuple[int, int, int]
     info: str = ""
-    distance: float = 0.0
+    distance: float = 0.0  # light-years (AU for planets)
     magnitude: float = 0.0
-    type: str = "star"  # "star", "planet", "galaxy", "comet", etc.
+    type: str = "star"  # "star", "planet", "galaxy"
     is_visible: bool = True
-    orbital_radius: float = 0.0
-    orbital_period: float = 0.0  # in days
-    angle: float = 0.0  # current angle in orbit
-    epoch: datetime.datetime = None  # reference time for orbital calculations
+    orbital_period: float = 0.0  # days; > 0 means the object drifts along the sky
+    base_azimuth: float = 0.0
+    labeled: bool = False
+    twinkle_phase: float = field(default_factory=lambda: random.uniform(0, 2 * math.pi))
+
+    # Runtime state, filled in by the renderer each frame
+    screen_pos: Optional[Tuple[float, float]] = None
+    screen_size: float = 0.0
 
     def __post_init__(self):
-        if self.epoch is None:
-            self.epoch = datetime.datetime.now()
+        self.base_azimuth = self.azimuth
 
-    def update_position(self, time_delta: float):
-        """Update object position based on orbital mechanics"""
+    def update_position(self, elapsed_days: float):
+        """Advance the object along its orbit based on simulated elapsed time."""
         if self.orbital_period > 0:
-            # Update angle based on orbital period and time delta
-            # Convert orbital period from days to radians per second
-            # 1 orbit = 2π radians, period is in days, time_delta is in seconds
-            orbital_speed = (2 * math.pi) / (self.orbital_period * 86400)  # radians per second
-            self.angle += orbital_speed * time_delta
+            self.azimuth = (self.base_azimuth + 2 * math.pi * elapsed_days / self.orbital_period) % (2 * math.pi)
 
-            # Keep angle within 0-2π range to prevent overflow
-            self.angle = self.angle % (2 * math.pi)
+    def direction(self) -> Tuple[float, float, float]:
+        """Unit direction vector: x = east, y = up, z = north."""
+        cos_alt = math.cos(self.altitude)
+        return (
+            cos_alt * math.sin(self.azimuth),
+            math.sin(self.altitude),
+            cos_alt * math.cos(self.azimuth),
+        )
 
-    def draw(self, surface, mouse_pos=None, time_scale=1.0):
-        """Draw the celestial object"""
-        if not self.is_visible:
-            return
+    def is_hovered(self, mouse_pos) -> bool:
+        """Check if the mouse is on or near the object's projected position."""
+        if not mouse_pos or self.screen_pos is None or not self.is_visible:
+            return False
+        dx = mouse_pos[0] - self.screen_pos[0]
+        dy = mouse_pos[1] - self.screen_pos[1]
+        return math.hypot(dx, dy) <= max(8.0, self.screen_size + 4)
 
-        # Draw glow effect
-        glow_radius = int(self.size * 1.5)
-        if glow_radius > 0:
-            s = pygame.Surface((glow_radius * 2, glow_radius * 2), pygame.SRCALPHA)
-            pygame.draw.circle(s, (*self.color, 100), (glow_radius, glow_radius), glow_radius)
-            surface.blit(s, (self.x - glow_radius, self.y - glow_radius))
-
-        # Draw the object
-        pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), int(self.size))
-
-        # Draw name if mouse is hovering
-        if mouse_pos and self.is_hovered(mouse_pos):
-            font = pygame.font.SysFont(None, 24)
-            text = font.render(self.name, True, WHITE)
-            surface.blit(text, (self.x - text.get_width() // 2, self.y - self.size - 30))
-
-            # Draw additional info
-            info_font = pygame.font.SysFont(None, 18)
-            info_text = info_font.render(f"Distance: {self.distance} ly | Magnitude: {self.magnitude}", True, LIGHT_BLUE)
-            surface.blit(info_text, (self.x - info_text.get_width() // 2, self.y - self.size - 55))
-
-    def is_hovered(self, mouse_pos):
-        """Check if mouse is hovering over the object"""
-        if mouse_pos:
-            distance = math.sqrt((mouse_pos[0] - self.x)**2 + (mouse_pos[1] - self.y)**2)
-            return distance <= self.size
-        return False
 
 class TimeManager:
-    """Manages time playback for the celestial viewer"""
+    """Manages simulated time playback."""
+
+    SPEEDS = [1.0, 60.0, 3600.0, 86400.0, 604800.0, 2592000.0, 31536000.0]
+    SPEED_NAMES = ["1x (real-time)", "1 min/s", "1 hour/s", "1 day/s", "1 week/s", "1 month/s", "1 year/s"]
 
     def __init__(self):
-        self.current_time = datetime.datetime.now()
-        self.start_time = self.current_time
-        self.end_time = self.current_time + datetime.timedelta(days=365)  # One year ahead
+        self.start_time = datetime.datetime.now()
+        self.current_time = self.start_time
         self.is_playing = False
-        self.time_scale = 1.0  # 1 second real time = 1 second simulation time
-        self.speeds = [0.1, 0.5, 1.0, 5.0, 10.0, 60.0, 3600.0, 86400.0, 2592000.0, 31536000.0]  # seconds: 1s, 5s, 10s, 1m, 10m, 1h, 1d, 1w, 1mo, 1y
-        self.speed_names = ["1s", "5s", "10s", "1m", "10m", "1h", "1d", "1w", "1mo", "1y"]
-        self.current_speed_index = 2  # Start with 10s per second
+        self.current_speed_index = 3  # 1 day/s: planets visibly move
+
+    @property
+    def time_scale(self) -> float:
+        return self.SPEEDS[self.current_speed_index]
 
     def toggle_playback(self):
-        """Toggle time playback"""
         self.is_playing = not self.is_playing
 
-    def set_time_scale(self, scale_index: int):
-        """Set time scale by index"""
-        if 0 <= scale_index < len(self.speeds):
-            self.current_speed_index = scale_index
-            self.time_scale = self.speeds[scale_index]
+    def change_speed(self, step: int):
+        self.current_speed_index = max(0, min(len(self.SPEEDS) - 1, self.current_speed_index + step))
 
-    def get_current_speed_name(self):
-        """Get the name of the current time speed"""
-        return self.speed_names[self.current_speed_index]
+    def get_current_speed_name(self) -> str:
+        return self.SPEED_NAMES[self.current_speed_index]
+
+    def elapsed_days(self) -> float:
+        return (self.current_time - self.start_time).total_seconds() / 86400.0
 
     def update(self, delta_time: float):
-        """Update time based on playback state"""
         if self.is_playing:
-            # Calculate time increment based on time scale
-            time_increment = delta_time * self.time_scale
-            self.current_time += datetime.timedelta(seconds=time_increment)
+            self.current_time += datetime.timedelta(seconds=delta_time * self.time_scale)
 
     def reset_time(self):
-        """Reset to start time"""
         self.current_time = self.start_time
 
-    def set_time_range(self, start_time: datetime.datetime, end_time: datetime.datetime):
-        """Set time range for playback"""
-        self.start_time = start_time
-        self.end_time = end_time
-        self.current_time = start_time
 
 class Compass:
-    """Compass system for celestial orientation"""
+    """Compass that shows the current viewing direction (rotates with the camera)."""
 
-    def __init__(self, center_x, center_y, radius):
-        self.center_x = center_x
-        self.center_y = center_y
+    def __init__(self, radius: int):
         self.radius = radius
-        self.directions = {
-            0: "N",  # North
-            90: "E", # East
-            180: "S", # South
-            270: "W" # West
-        }
         self.font = pygame.font.SysFont(None, 24)
+        self.small_font = pygame.font.SysFont(None, 18)
 
-    def draw(self, surface):
-        """Draw the compass"""
-        # Draw compass circle
-        pygame.draw.circle(surface, WHITE, (self.center_x, self.center_y), self.radius, 2)
+    def draw(self, surface, center: Tuple[int, int], yaw: float, pitch: float):
+        cx, cy = center
+        pygame.draw.circle(surface, (*PANEL_BORDER, 0)[:3], (cx, cy), self.radius, 2)
 
-        # Draw direction markers
-        for angle in range(0, 360, 15):  # Every 15 degrees
-            rad_angle = math.radians(angle)
-            x1 = self.center_x + (self.radius - 10) * math.cos(rad_angle)
-            y1 = self.center_y + (self.radius - 10) * math.sin(rad_angle)
-            x2 = self.center_x + self.radius * math.cos(rad_angle)
-            y2 = self.center_y + self.radius * math.sin(rad_angle)
+        # Tick marks every 15 degrees, rotated so the top of the compass is
+        # the direction we are looking at
+        for deg in range(0, 360, 15):
+            display = math.radians(deg) - yaw
+            outer = (cx + self.radius * math.sin(display), cy - self.radius * math.cos(display))
+            length = 10 if deg % 90 == 0 else 5
+            inner = (cx + (self.radius - length) * math.sin(display),
+                     cy - (self.radius - length) * math.cos(display))
+            pygame.draw.line(surface, LIGHT_GRAY, inner, outer, 2 if deg % 90 == 0 else 1)
 
-            # Draw marker line
-            pygame.draw.line(surface, WHITE, (x1, y1), (x2, y2), 2)
+        for deg, label in ((0, "N"), (90, "E"), (180, "S"), (270, "W")):
+            display = math.radians(deg) - yaw
+            lx = cx + (self.radius - 22) * math.sin(display)
+            ly = cy - (self.radius - 22) * math.cos(display)
+            color = ACCENT if deg == 0 else WHITE
+            text = self.font.render(label, True, color)
+            surface.blit(text, (lx - text.get_width() // 2, ly - text.get_height() // 2))
 
-            # Draw direction labels
-            if angle in self.directions:
-                label_x = self.center_x + (self.radius + 20) * math.cos(rad_angle)
-                label_y = self.center_y + (self.radius + 20) * math.sin(rad_angle)
-                text = self.font.render(self.directions[angle], True, WHITE)
-                surface.blit(text, (label_x - text.get_width() // 2, label_y - text.get_height() // 2))
+        # Heading marker at the top + numeric heading/altitude readout
+        pygame.draw.polygon(surface, ACCENT, [
+            (cx, cy - self.radius - 2), (cx - 6, cy - self.radius - 12), (cx + 6, cy - self.radius - 12)])
+        heading = math.degrees(yaw) % 360
+        text = self.small_font.render(f"{heading:03.0f}°  alt {math.degrees(pitch):+.0f}°", True, LIGHT_GRAY)
+        surface.blit(text, (cx - text.get_width() // 2, cy + self.radius + 8))
 
-        # Draw center point
-        pygame.draw.circle(surface, WHITE, (self.center_x, self.center_y), 5)
-
-        # Draw north indicator
-        north_text = self.font.render("N", True, WHITE)
-        surface.blit(north_text, (self.center_x - north_text.get_width() // 2, self.center_y - self.radius - 30))
 
 class StarryNightApp:
-    """Main application class for the starry night viewer"""
+    """Main application class for the starry night viewer."""
+
+    MIN_FOV = math.radians(25)
+    MAX_FOV = math.radians(110)
 
     def __init__(self):
+        pygame.init()
+        self.width, self.height = 1200, 800
+        self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
+        pygame.display.set_caption("Starry Night - Celestial Viewer")
+
         self.objects: List[CelestialObject] = []
         self.clock = pygame.time.Clock()
         self.running = True
         self.mouse_pos = None
-        self.mouse_pressed = False
-        self.last_mouse_pos = None
+        self.dragging = False
+        self.drag_start = None
+        self.drag_moved = False
         self.time_manager = TimeManager()
         self.show_controls = True
-        self.selected_object = None
-        self.object_visibility = {}
-        self.compass = Compass(WIDTH - 100, 100, 60)
-        self.rotation_x = 0  # Horizontal rotation
-        self.rotation_y = 0  # Vertical rotation
+        self.show_labels = True
+        self.selected_object: Optional[CelestialObject] = None
+        self.hovered_object: Optional[CelestialObject] = None
+        self.compass = Compass(56)
+
+        # Camera
+        self.yaw = 0.0          # heading, 0 = north, increases towards east
+        self.pitch = math.radians(20)  # looking slightly up
+        self.fov = math.radians(70)
+
+        self.fonts = {size: pygame.font.SysFont(None, size) for size in (18, 20, 24, 26, 30, 48)}
+        self.sky_background = None
+        self.build_sky_background()
         self.create_celestial_objects()
-        self.setup_object_visibility()
+
+    # ------------------------------------------------------------------ setup
+
+    def build_sky_background(self):
+        """Pre-render the vertical sky gradient once (redone on window resize)."""
+        self.sky_background = pygame.Surface((self.width, self.height))
+        for y in range(self.height):
+            t = y / max(1, self.height - 1)
+            r = int(2 + 8 * (1 - t))
+            g = int(3 + 10 * (1 - t))
+            b = int(12 + 34 * (1 - t))
+            pygame.draw.line(self.sky_background, (r, g, b), (0, y), (self.width, y))
 
     def create_celestial_objects(self):
-        """Create celestial objects for the visualization"""
-        # Create stars
-        for _ in range(500):
-            x = random.randint(0, WIDTH)
-            y = random.randint(0, HEIGHT)
-            size = random.uniform(0.5, 3.0)
-            # Create a range of star colors (white, blue, yellow, red)
-            color = random.choice([WHITE, BLUE, YELLOW, (255, 200, 150), (255, 100, 100)])
-            name = f"Star {random.randint(1, 1000)}"
-            info = f"Stellar object with size {size:.1f}"
-            distance = random.uniform(1, 1000)
-            magnitude = random.uniform(-2, 10)
-            self.objects.append(CelestialObject(name, x, y, size, color, info, distance, magnitude, "star"))
+        """Create celestial objects on the sky sphere."""
+        # Background stars spread over the whole sphere
+        for i in range(700):
+            azimuth = random.uniform(0, 2 * math.pi)
+            altitude = math.asin(random.uniform(-0.3, 1.0))  # mostly above the horizon
+            size = random.uniform(0.6, 2.4)
+            color = random.choice([WHITE, WHITE, WHITE, LIGHT_BLUE, YELLOW, (255, 200, 150), (255, 140, 130)])
+            self.objects.append(CelestialObject(
+                f"Star {i + 1}", azimuth, altitude, size, color,
+                info="Background star",
+                distance=round(random.uniform(4, 2000), 1),
+                magnitude=round(random.uniform(2, 6.5), 2)))
 
-        # Add planets with orbital mechanics
+        # Planets drift along an ecliptic-like band as time plays
         planets = [
-            ("Mercury", ORANGE, 8, "Closest planet to the Sun", 0.39, -0.42, 88, 0),
-            ("Venus", YELLOW, 10, "Hottest planet", 0.72, -4.4, 225, 0),
-            ("Earth", BLUE, 10, "Our home planet", 1.0, -2.63, 365, 0),
-            ("Mars", RED, 9, "The Red Planet", 1.52, -1.52, 687, 0),
-            ("Jupiter", ORANGE, 20, "Largest planet", 5.20, -2.20, 4333, 0),
-            ("Saturn", YELLOW, 18, "Ringed planet", 9.54, -0.63, 10759, 0),
-            ("Uranus", LIGHT_BLUE, 15, "Ice giant", 19.19, -0.33, 30687, 0),
-            ("Neptune", BLUE, 15, "Windiest planet", 30.07, -0.73, 60190, 0)
+            ("Mercury", ORANGE, 5, "Closest planet to the Sun", 0.39, -0.42, 88),
+            ("Venus", YELLOW, 8, "Hottest planet", 0.72, -4.4, 225),
+            ("Mars", RED, 6, "The Red Planet", 1.52, -1.52, 687),
+            ("Jupiter", (255, 200, 140), 11, "Largest planet", 5.20, -2.20, 4333),
+            ("Saturn", (235, 215, 160), 10, "Ringed planet", 9.54, -0.63, 10759),
+            ("Uranus", LIGHT_BLUE, 7, "Ice giant", 19.19, -0.33, 30687),
+            ("Neptune", BLUE, 7, "Windiest planet", 30.07, -0.73, 60190),
         ]
+        for name, color, size, info, distance, magnitude, period in planets:
+            azimuth = random.uniform(0, 2 * math.pi)
+            altitude = math.radians(random.uniform(12, 40))
+            self.objects.append(CelestialObject(
+                name, azimuth, altitude, size, color, info, distance, magnitude,
+                "planet", orbital_period=period, labeled=True))
 
-        for name, color, size, info, distance, magnitude, orbital_period, angle in planets:
-            # Position planets in a circular pattern with some randomness
-            angle = random.uniform(0, 2 * math.pi)
-            radius = random.randint(300, 500)
-            x = WIDTH // 2 + radius * math.cos(angle)
-            y = HEIGHT // 2 + radius * math.sin(angle)
-            obj = CelestialObject(name, x, y, size, color, info, distance, magnitude, "planet", True, radius, orbital_period, angle)
-            self.objects.append(obj)
-
-        # Add some notable stars
         notable_stars = [
-            ("Sirius", WHITE, 15, "Brightest star in night sky", 8.6, -1.46, 0, 0),
-            ("Canopus", YELLOW, 14, "Second brightest star", 310, -0.74, 0, 0),
-            ("Arcturus", ORANGE, 13, "Bright star in Bootes", 36.7, -0.05, 0, 0),
-            ("Vega", BLUE, 12, "Bright star in Lyra", 25, 0.03, 0, 0),
-            ("Capella", YELLOW, 13, "Bright star in Auriga", 42.9, 0.08, 0, 0),
-            ("Rigel", BLUE, 16, "Bright star in Orion", 860, -7.0, 0, 0),
-            ("Betelgeuse", RED, 18, "Red supergiant in Orion", 642, -0.5, 0, 0),
-            ("Proxima Centauri", RED, 6, "Closest star to Sun", 4.24, 11.1, 0, 0)
+            ("Sirius", WHITE, 7, "Brightest star in night sky", 8.6, -1.46),
+            ("Canopus", YELLOW, 6, "Second brightest star", 310, -0.74),
+            ("Arcturus", ORANGE, 6, "Bright star in Bootes", 36.7, -0.05),
+            ("Vega", LIGHT_BLUE, 6, "Bright star in Lyra", 25, 0.03),
+            ("Capella", YELLOW, 6, "Bright star in Auriga", 42.9, 0.08),
+            ("Rigel", LIGHT_BLUE, 7, "Bright star in Orion", 860, -7.0),
+            ("Betelgeuse", RED, 8, "Red supergiant in Orion", 642, -0.5),
+            ("Proxima Centauri", RED, 4, "Closest star to the Sun", 4.24, 11.1),
         ]
+        for name, color, size, info, distance, magnitude in notable_stars:
+            azimuth = random.uniform(0, 2 * math.pi)
+            altitude = math.radians(random.uniform(8, 75))
+            self.objects.append(CelestialObject(
+                name, azimuth, altitude, size, color, info, distance, magnitude,
+                "star", labeled=True))
 
-        for name, color, size, info, distance, magnitude, orbital_period, angle in notable_stars:
-            angle = random.uniform(0, 2 * math.pi)
-            radius = random.randint(200, 400)
-            x = WIDTH // 2 + radius * math.cos(angle)
-            y = HEIGHT // 2 + radius * math.sin(angle)
-            self.objects.append(CelestialObject(name, x, y, size, color, info, distance, magnitude, "star", True, radius, orbital_period, angle))
-
-        # Add some galaxies
         galaxies = [
-            ("Andromeda", PURPLE, 25, "Closest galaxy to Milky Way", 2500000, -2.0, 0, 0),
-            ("Whirlpool", CYAN, 20, "Spiral galaxy", 23000000, -8.4, 0, 0),
-            ("Sombrero", YELLOW, 18, "Galaxy with prominent dust lane", 28000000, -9.4, 0, 0)
+            ("Andromeda", PURPLE, 10, "Closest large galaxy to the Milky Way", 2500000, 3.4),
+            ("Whirlpool", CYAN, 8, "Spiral galaxy", 23000000, 8.4),
+            ("Sombrero", YELLOW, 8, "Galaxy with a prominent dust lane", 28000000, 9.4),
         ]
+        for name, color, size, info, distance, magnitude in galaxies:
+            azimuth = random.uniform(0, 2 * math.pi)
+            altitude = math.radians(random.uniform(20, 70))
+            self.objects.append(CelestialObject(
+                name, azimuth, altitude, size, color, info, distance, magnitude,
+                "galaxy", labeled=True))
 
-        for name, color, size, info, distance, magnitude, orbital_period, angle in galaxies:
-            angle = random.uniform(0, 2 * math.pi)
-            radius = random.randint(400, 600)
-            x = WIDTH // 2 + radius * math.cos(angle)
-            y = HEIGHT // 2 + radius * math.sin(angle)
-            self.objects.append(CelestialObject(name, x, y, size, color, info, distance, magnitude, "galaxy", True, radius, orbital_period, angle))
+    # ------------------------------------------------------------- projection
 
-    def setup_object_visibility(self):
-        """Set up initial visibility for objects"""
-        for obj in self.objects:
-            self.object_visibility[obj.name] = obj.is_visible
+    def focal_length(self) -> float:
+        return (self.height / 2) / math.tan(self.fov / 2)
+
+    def project(self, direction: Tuple[float, float, float]) -> Optional[Tuple[float, float]]:
+        """Project a world direction vector to screen coordinates, or None if behind the camera."""
+        x, y, z = direction
+        cos_yaw, sin_yaw = math.cos(self.yaw), math.sin(self.yaw)
+        x1 = x * cos_yaw - z * sin_yaw
+        z1 = x * sin_yaw + z * cos_yaw
+        cos_p, sin_p = math.cos(self.pitch), math.sin(self.pitch)
+        y1 = y * cos_p - z1 * sin_p
+        z2 = y * sin_p + z1 * cos_p
+        if z2 <= 0.05:
+            return None
+        focal = self.focal_length()
+        sx = self.width / 2 + focal * x1 / z2
+        sy = self.height / 2 - focal * y1 / z2
+        if -80 <= sx <= self.width + 80 and -80 <= sy <= self.height + 80:
+            return (sx, sy)
+        return None
+
+    # ----------------------------------------------------------------- events
 
     def handle_events(self):
-        """Handle pygame events"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+            elif event.type == pygame.VIDEORESIZE:
+                self.width, self.height = max(640, event.w), max(480, event.h)
+                self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
+                self.build_sky_background()
             elif event.type == pygame.MOUSEMOTION:
                 self.mouse_pos = event.pos
-                if self.mouse_pressed and self.last_mouse_pos:
-                    # Calculate mouse movement delta
-                    dx = event.pos[0] - self.last_mouse_pos[0]
-                    dy = event.pos[1] - self.last_mouse_pos[1]
-
-                    # Update rotation based on mouse movement
-                    self.rotation_x += dx * 0.01
-                    self.rotation_y += dy * 0.01
-
-                    # Limit vertical rotation to prevent flipping
-                    self.rotation_y = max(-math.pi/2, min(math.pi/2, self.rotation_y))
-
-                    # Store current mouse position for next calculation
-                    self.last_mouse_pos = event.pos
+                if self.dragging:
+                    dx, dy = event.rel
+                    if abs(dx) + abs(dy) > 2:
+                        self.drag_moved = True
+                    # Grab-the-sky: the scene follows the mouse
+                    sensitivity = self.fov / self.height
+                    self.yaw = (self.yaw - dx * sensitivity) % (2 * math.pi)
+                    self.pitch = max(math.radians(-89), min(math.radians(89),
+                                                            self.pitch + dy * sensitivity))
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:  # Left click
-                    self.mouse_pressed = True
-                    self.last_mouse_pos = event.pos
-                    # Check if clicked on an object
-                    for obj in reversed(self.objects):  # Check from front to back
-                        if obj.is_hovered(self.mouse_pos):
-                            self.selected_object = obj
-                            break
-                    else:
-                        self.selected_object = None
-                elif event.button == 4:  # Scroll up - zoom in
-                    pass
-                elif event.button == 5:  # Scroll down - zoom out
-                    pass
+                if event.button == 1:
+                    self.dragging = True
+                    self.drag_moved = False
+                    self.drag_start = event.pos
             elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 1:  # Left mouse button released
-                    self.mouse_pressed = False
-                    self.last_mouse_pos = None
+                if event.button == 1:
+                    if not self.drag_moved:
+                        self.select_object_at(event.pos)
+                    self.dragging = False
+            elif event.type == pygame.MOUSEWHEEL:
+                zoom = math.exp(-event.y * 0.1)
+                self.fov = max(self.MIN_FOV, min(self.MAX_FOV, self.fov * zoom))
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
-                    self.time_manager.toggle_playback()
-                elif event.key == pygame.K_r:
-                    self.time_manager.reset_time()
-                elif event.key == pygame.K_c:
-                    self.show_controls = not self.show_controls
-                elif event.key == pygame.K_UP:
-                    # Speed up time
-                    if self.time_manager.current_speed_index < len(self.time_manager.speeds) - 1:
-                        self.time_manager.set_time_scale(self.time_manager.current_speed_index + 1)
-                elif event.key == pygame.K_DOWN:
-                    # Slow down time
-                    if self.time_manager.current_speed_index > 0:
-                        self.time_manager.set_time_scale(self.time_manager.current_speed_index - 1)
-                elif event.key == pygame.K_t:
-                    # Toggle object visibility
-                    if self.selected_object:
-                        self.selected_object.is_visible = not self.selected_object.is_visible
-                elif event.key == pygame.K_ESCAPE:
-                    self.running = False
+                self.handle_key(event.key)
+
+    def handle_key(self, key):
+        if key == pygame.K_SPACE:
+            self.time_manager.toggle_playback()
+        elif key == pygame.K_r:
+            self.time_manager.reset_time()
+            for obj in self.objects:
+                obj.update_position(0.0)
+        elif key == pygame.K_c:
+            self.show_controls = not self.show_controls
+        elif key == pygame.K_l:
+            self.show_labels = not self.show_labels
+        elif key in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS):
+            self.time_manager.change_speed(1)
+        elif key in (pygame.K_MINUS, pygame.K_KP_MINUS):
+            self.time_manager.change_speed(-1)
+        elif key == pygame.K_t:
+            if self.selected_object:
+                self.selected_object.is_visible = not self.selected_object.is_visible
+        elif key == pygame.K_ESCAPE:
+            if self.selected_object:
+                self.selected_object = None
+            else:
+                self.running = False
+
+    def select_object_at(self, pos):
+        """Select the labeled object closest to the click, if any is near."""
+        best, best_dist = None, 18.0
+        for obj in self.objects:
+            if obj.screen_pos is None or not obj.is_visible:
+                continue
+            dist = math.hypot(pos[0] - obj.screen_pos[0], pos[1] - obj.screen_pos[1])
+            dist -= obj.screen_size  # favor clicking anywhere inside big objects
+            if dist < best_dist:
+                best, best_dist = obj, dist
+        self.selected_object = best
+
+    # ----------------------------------------------------------------- update
 
     def update(self):
-        """Update the application state"""
-        # Update time
-        delta_time = self.clock.get_time() / 1000.0  # Convert to seconds
-        self.time_manager.update(delta_time)
+        delta_time = self.clock.get_time() / 1000.0
+        # Keyboard rotation (arrow keys), scaled with zoom level
+        keys = pygame.key.get_pressed()
+        rot_speed = self.fov * delta_time
+        if keys[pygame.K_LEFT]:
+            self.yaw = (self.yaw - rot_speed) % (2 * math.pi)
+        if keys[pygame.K_RIGHT]:
+            self.yaw = (self.yaw + rot_speed) % (2 * math.pi)
+        if keys[pygame.K_UP]:
+            self.pitch = min(math.radians(89), self.pitch + rot_speed)
+        if keys[pygame.K_DOWN]:
+            self.pitch = max(math.radians(-89), self.pitch - rot_speed)
 
-        # Update orbital positions
+        self.time_manager.update(delta_time)
+        elapsed = self.time_manager.elapsed_days()
         for obj in self.objects:
             if obj.orbital_period > 0:
-                obj.update_position(delta_time)
+                obj.update_position(elapsed)
+
+    # ------------------------------------------------------------------- draw
 
     def draw(self):
-        """Draw the entire scene"""
-        screen.fill(BLACK)
-
-        # Draw dome-like effect
-        self.draw_dome()
-
-        # Draw celestial objects
-        for obj in self.objects:
-            obj.draw(screen, self.mouse_pos, self.time_manager.time_scale)
-
-        # Draw compass
-        if hasattr(self, 'compass'):
-            self.compass.draw(screen)
-
-        # Draw title
-        font = pygame.font.SysFont(None, 48)
-        title = font.render("Starry Night - Celestial Viewer", True, WHITE)
-        screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 20))
-
-        # Draw time information
-        time_str = self.time_manager.current_time.strftime("%Y-%m-%d %H:%M:%S")
-        font = pygame.font.SysFont(None, 24)
-        time_text = font.render(f"Time: {time_str} | Speed: {self.time_manager.get_current_speed_name()}", True, WHITE)
-        screen.blit(time_text, (20, 20))
-
-        # Draw rotation indicator
-        font = pygame.font.SysFont(None, 20)
-        rotation_text = font.render(f"Rotation: X={self.rotation_x:.2f}, Y={self.rotation_y:.2f}", True, LIGHT_GRAY)
-        screen.blit(rotation_text, (20, 50))
-
-        # Draw controls if visible
+        self.screen.blit(self.sky_background, (0, 0))
+        self.draw_horizon()
+        self.draw_objects()
+        self.compass.draw(self.screen, (self.width - 90, 96), self.yaw, self.pitch)
+        self.draw_hud()
         if self.show_controls:
             self.draw_controls()
-
-        # Draw instructions
-        font = pygame.font.SysFont(None, 24)
-        instructions = font.render("Controls: SPACE (play/pause), R (reset), UP/DOWN (speed), C (toggle controls), T (toggle object), MOUSE (rotate view), ESC (quit)", True, WHITE)
-        screen.blit(instructions, (WIDTH // 2 - instructions.get_width() // 2, HEIGHT - 40))
-
+        if self.selected_object:
+            self.draw_info_panel(self.selected_object)
         pygame.display.flip()
 
-    def draw_dome(self):
-        """Draw a dome-like effect for the sky"""
-        # Draw gradient background
-        for y in range(HEIGHT // 2):
-            # Create a gradient from dark blue to black
-            intensity = max(0, 255 - (y // 3))
-            color = (0, 0, intensity)
-            pygame.draw.line(screen, color, (0, y), (WIDTH, y))
+    def draw_horizon(self):
+        """Draw the horizon line with cardinal direction markers."""
+        points = []
+        for deg in range(0, 361, 3):
+            direction = (math.sin(math.radians(deg)), 0.0, math.cos(math.radians(deg)))
+            pos = self.project(direction)
+            points.append(pos)
+        # Draw as connected segments, skipping gaps that leave the screen
+        segment = []
+        for pos in points + [None]:
+            if pos:
+                segment.append(pos)
+            else:
+                if len(segment) >= 2:
+                    pygame.draw.lines(self.screen, HORIZON_COLOR, False, segment, 2)
+                segment = []
+        # Cardinal labels on the horizon
+        font = self.fonts[26]
+        for deg, label in ((0, "N"), (90, "E"), (180, "S"), (270, "W")):
+            direction = (math.sin(math.radians(deg)), 0.0, math.cos(math.radians(deg)))
+            pos = self.project(direction)
+            if pos:
+                text = font.render(label, True, ACCENT)
+                self.screen.blit(text, (pos[0] - text.get_width() // 2, pos[1] + 8))
 
-        # Draw some stars in the background for more depth
-        for _ in range(100):
-            x = random.randint(0, WIDTH)
-            y = random.randint(0, HEIGHT // 2)
-            size = random.uniform(0.5, 1.5)
-            brightness = random.randint(100, 255)
-            pygame.draw.circle(screen, (brightness, brightness, brightness), (x, y), size)
+    def draw_objects(self):
+        ticks = pygame.time.get_ticks() / 1000.0
+        zoom_scale = math.sqrt(self.focal_length() / ((self.height / 2) / math.tan(math.radians(35))))
+        self.hovered_object = None
+        label_font = self.fonts[18]
+
+        for obj in self.objects:
+            obj.screen_pos = None
+            if not obj.is_visible:
+                continue
+            pos = self.project(obj.direction())
+            if pos is None:
+                continue
+            obj.screen_pos = pos
+            obj.screen_size = max(1.0, obj.size * zoom_scale)
+
+            # Subtle time-based twinkle for small background stars
+            color = obj.color
+            if obj.type == "star" and not obj.labeled:
+                factor = 0.8 + 0.2 * math.sin(ticks * 2.5 + obj.twinkle_phase)
+                color = tuple(int(c * factor) for c in obj.color)
+
+            x, y = int(pos[0]), int(pos[1])
+            radius = int(obj.screen_size)
+            if obj.labeled and radius >= 3:
+                glow_radius = radius * 2
+                glow = pygame.Surface((glow_radius * 2, glow_radius * 2), pygame.SRCALPHA)
+                pygame.draw.circle(glow, (*obj.color, 60), (glow_radius, glow_radius), glow_radius)
+                self.screen.blit(glow, (x - glow_radius, y - glow_radius))
+            pygame.draw.circle(self.screen, color, (x, y), max(1, radius))
+
+            if obj is self.selected_object:
+                pygame.draw.circle(self.screen, ACCENT, (x, y), radius + 8, 2)
+            if self.show_labels and obj.labeled:
+                text = label_font.render(obj.name, True, LIGHT_GRAY)
+                self.screen.blit(text, (x - text.get_width() // 2, y + radius + 4))
+
+            if self.hovered_object is None and obj.is_hovered(self.mouse_pos):
+                self.hovered_object = obj
+
+        if self.hovered_object and self.hovered_object is not self.selected_object:
+            self.draw_tooltip(self.hovered_object)
+
+    def draw_tooltip(self, obj: CelestialObject):
+        x, y = obj.screen_pos
+        name_text = self.fonts[24].render(obj.name, True, WHITE)
+        unit = "AU" if obj.type == "planet" else "ly"
+        info_text = self.fonts[18].render(
+            f"{obj.type.capitalize()} | {obj.distance:g} {unit} | mag {obj.magnitude:g}", True, LIGHT_BLUE)
+        w = max(name_text.get_width(), info_text.get_width()) + 16
+        h = name_text.get_height() + info_text.get_height() + 14
+        tx = min(max(8, x - w / 2), self.width - w - 8)
+        ty = max(8, y - obj.screen_size - h - 12)
+        panel = pygame.Surface((w, h), pygame.SRCALPHA)
+        panel.fill(PANEL_BG)
+        self.screen.blit(panel, (tx, ty))
+        self.screen.blit(name_text, (tx + 8, ty + 5))
+        self.screen.blit(info_text, (tx + 8, ty + 8 + name_text.get_height()))
+
+    def draw_hud(self):
+        """Top bar with time, speed and play state."""
+        bar = pygame.Surface((self.width, 42), pygame.SRCALPHA)
+        bar.fill((10, 12, 28, 200))
+        self.screen.blit(bar, (0, 0))
+
+        state = "PLAYING" if self.time_manager.is_playing else "PAUSED  (SPACE to play)"
+        state_color = (140, 255, 140) if self.time_manager.is_playing else ACCENT
+        time_str = self.time_manager.current_time.strftime("%Y-%m-%d %H:%M:%S")
+        self.screen.blit(self.fonts[24].render(f"Time: {time_str}", True, WHITE), (16, 12))
+        self.screen.blit(self.fonts[24].render(
+            f"Speed: {self.time_manager.get_current_speed_name()}", True, LIGHT_GRAY), (300, 12))
+        self.screen.blit(self.fonts[24].render(state, True, state_color), (560, 12))
+
+        title = self.fonts[30].render("Starry Night", True, WHITE)
+        self.screen.blit(title, (self.width - title.get_width() - 200, 10))
+
+        hint = self.fonts[20].render(
+            "Drag or arrow keys to look around | scroll to zoom | click an object for details | C for help",
+            True, GRAY)
+        self.screen.blit(hint, (self.width // 2 - hint.get_width() // 2, self.height - 26))
 
     def draw_controls(self):
-        """Draw control panel"""
-        # Draw control panel background
-        panel_width = 320
-        panel_height = 220
-        panel_x = 20
-        panel_y = 60
-
-        # Draw semi-transparent background
-        pygame.draw.rect(screen, (30, 30, 50, 200), (panel_x, panel_y, panel_width, panel_height))
-        pygame.draw.rect(screen, LIGHT_GRAY, (panel_x, panel_y, panel_width, panel_height), 2)
-
-        font = pygame.font.SysFont(None, 26)
-        title = font.render("Controls", True, WHITE)
-        screen.blit(title, (panel_x + 10, panel_y + 10))
-
-        # Draw playback controls
-        font_small = pygame.font.SysFont(None, 20)
         controls = [
-            "SPACE: Play/Pause",
-            "R: Reset Time",
-            "UP/DOWN: Speed",
-            "C: Toggle Controls",
-            "T: Toggle Object",
-            "MOUSE: Rotate View",
-            "ESC: Quit"
+            ("Drag / Arrows", "look around"),
+            ("Scroll", "zoom in/out"),
+            ("Click", "select object"),
+            ("SPACE", "play / pause time"),
+            ("+ / -", "time speed"),
+            ("R", "reset time"),
+            ("T", "hide/show selection"),
+            ("L", "toggle labels"),
+            ("C", "toggle this panel"),
+            ("ESC", "deselect / quit"),
         ]
+        width, row_h = 300, 22
+        height = 46 + len(controls) * row_h
+        panel = pygame.Surface((width, height), pygame.SRCALPHA)
+        panel.fill(PANEL_BG)
+        pygame.draw.rect(panel, PANEL_BORDER, (0, 0, width, height), 1)
+        panel.blit(self.fonts[26].render("Controls", True, WHITE), (12, 10))
+        for i, (key, action) in enumerate(controls):
+            y = 42 + i * row_h
+            panel.blit(self.fonts[20].render(key, True, ACCENT), (12, y))
+            panel.blit(self.fonts[20].render(action, True, LIGHT_GRAY), (140, y))
+        self.screen.blit(panel, (16, 56))
 
-        for i, control in enumerate(controls):
-            text = font_small.render(control, True, LIGHT_GRAY)
-            screen.blit(text, (panel_x + 10, panel_y + 40 + i * 20))
+    def draw_info_panel(self, obj: CelestialObject):
+        unit = "AU" if obj.type == "planet" else "ly"
+        lines = [
+            (obj.type.capitalize(), LIGHT_BLUE),
+            (f"Distance: {obj.distance:g} {unit}", LIGHT_GRAY),
+            (f"Magnitude: {obj.magnitude:g}", LIGHT_GRAY),
+        ]
+        if obj.orbital_period > 0:
+            lines.append((f"Orbital period: {obj.orbital_period:g} days", LIGHT_GRAY))
+        if obj.info:
+            lines.append((obj.info, WHITE))
+        lines.append(("T: hide/show   ESC: deselect", GRAY))
+
+        width, row_h = 340, 22
+        height = 48 + len(lines) * row_h
+        panel = pygame.Surface((width, height), pygame.SRCALPHA)
+        panel.fill(PANEL_BG)
+        pygame.draw.rect(panel, PANEL_BORDER, (0, 0, width, height), 1)
+        panel.blit(self.fonts[26].render(obj.name, True, ACCENT), (12, 10))
+        for i, (line, color) in enumerate(lines):
+            panel.blit(self.fonts[20].render(line, True, color), (12, 42 + i * row_h))
+        self.screen.blit(panel, (self.width - width - 16, self.height - height - 40))
+
+    # -------------------------------------------------------------------- run
 
     def run(self):
-        """Main application loop"""
         while self.running:
             self.handle_events()
             self.update()
             self.draw()
             self.clock.tick(60)
-
         pygame.quit()
         sys.exit()
+
 
 def main():
     """Main entry point"""
     app = StarryNightApp()
     app.run()
+
 
 if __name__ == "__main__":
     main()

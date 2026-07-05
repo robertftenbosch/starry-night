@@ -4,13 +4,13 @@ A desktop application that displays celestial objects in a dome-like starry nigh
 
 ## Features
 
-- **Dome-like Visualization**: Realistic dome-shaped night sky visualization
-- **Celestial Objects**: Stars, planets, galaxies, and other celestial bodies
-- **Time Playback**: Play through time with adjustable speeds (seconds, minutes, hours, days, years)
-- **Object Toggling**: Show/hide individual celestial objects
-- **Mouse Navigation**: Rotate the view by clicking and dragging the mouse
-- **Directional Compass**: North, East, South, and West indicators for orientation
-- **Interactive Information**: Hover over objects to see detailed information
+- **True 3D Sky Sphere**: Objects live on a celestial sphere (azimuth/altitude) and are projected through a real camera, so rotating and zooming actually move the sky
+- **Celestial Objects**: Background stars, planets, notable stars, and galaxies
+- **Time Playback**: Play through time with adjustable speeds (real-time up to 1 year/s); planets drift along the sky according to their orbital periods
+- **Mouse & Keyboard Navigation**: Drag (or use the arrow keys) to look around, scroll to zoom
+- **Object Selection**: Click any object for a detail panel; hover for a quick tooltip
+- **Horizon & Compass**: A horizon line with N/E/S/W markers plus a compass that rotates with your viewing direction
+- **Resizable Window**: The view adapts when you resize the window
 
 ## Installation
 
@@ -71,20 +71,23 @@ starry-night
 ## Usage Instructions
 
 ### Controls
+- **Mouse drag / Arrow keys**: Look around (rotate the view)
+- **Scroll wheel**: Zoom in/out
+- **Click**: Select an object and show its detail panel
 - **Spacebar**: Start/pause time playback
+- **+ / -**: Change time speed
 - **R**: Reset to start time
-- **Up/Down Arrows**: Change time speed
-- **C**: Toggle control panel visibility
-- **T**: Toggle visibility of selected object
-- **Mouse**: Click and drag to rotate the view
-- **ESC**: Quit application
+- **T**: Toggle visibility of the selected object
+- **L**: Toggle object labels
+- **C**: Toggle the control panel
+- **ESC**: Deselect object, or quit when nothing is selected
 
 ### Navigation
-1. **Time Playback**: Use the time controls to move through celestial events
-2. **Object Selection**: Click on celestial objects to select them
-3. **Object Toggling**: Press 'T' to show/hide selected objects
-4. **View Rotation**: Click and drag with the mouse to rotate the view
-5. **Orientation**: Use the compass in the top-right corner to understand which direction you're viewing
+1. **View Rotation**: Click and drag with the mouse (or use the arrow keys) — the sky follows your mouse
+2. **Zoom**: Use the scroll wheel to zoom between wide-angle and close-up views
+3. **Time Playback**: Press SPACE and adjust the speed with + / - to watch planets drift along the sky
+4. **Object Selection**: Click on celestial objects to see distance, magnitude, and orbital data
+5. **Orientation**: Use the horizon markers (N/E/S/W) and the compass in the top-right corner; the compass rotates with your viewing direction
 
 ### Information Display
 - Hover over any celestial object to see its name and information
