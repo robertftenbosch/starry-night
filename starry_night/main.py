@@ -260,6 +260,7 @@ class StarryNightApp:
         self.show_controls = True
         self.show_labels = True
         self.show_constellations = True
+        self.always_night = False  # ignore daylight: keep the sky dark
         self.selected_object: Optional[CelestialObject] = None
         self.hovered_object: Optional[CelestialObject] = None
         self.compass = Compass(56)
@@ -365,13 +366,17 @@ class StarryNightApp:
         self.sun_alt_deg = math.degrees(self.sun.altitude)
         self.refresh_sky_background()
 
+    def effective_sun_alt(self) -> float:
+        """Sun altitude used for sky color and star visibility."""
+        return -90.0 if self.always_night else self.sun_alt_deg
+
     def refresh_sky_background(self):
         """(Re)render the sky gradient; cached per (size, sun altitude degree)."""
-        key = (self.width, self.height, round(self.sun_alt_deg))
+        key = (self.width, self.height, round(self.effective_sun_alt()))
         if key == self.sky_background_key:
             return
         self.sky_background_key = key
-        zenith, horizon_col = sky_palette(self.sun_alt_deg)
+        zenith, horizon_col = sky_palette(self.effective_sun_alt())
         self.sky_background = pygame.Surface((self.width, self.height))
         for y in range(self.height):
             t = y / max(1, self.height - 1)
@@ -454,6 +459,9 @@ class StarryNightApp:
             self.show_labels = not self.show_labels
         elif key == pygame.K_k:
             self.show_constellations = not self.show_constellations
+        elif key == pygame.K_n:
+            self.always_night = not self.always_night
+            self.refresh_sky_background()
         elif key in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS):
             self.time_manager.change_speed(1)
         elif key in (pygame.K_MINUS, pygame.K_KP_MINUS):
@@ -501,7 +509,7 @@ class StarryNightApp:
 
     def draw(self):
         self.screen.blit(self.sky_background, (0, 0))
-        limit = limiting_magnitude(self.sun_alt_deg)
+        limit = limiting_magnitude(self.effective_sun_alt())
         if self.show_constellations and limit > 3.0:
             self.draw_constellations()
         self.draw_objects(limit)
@@ -640,7 +648,7 @@ class StarryNightApp:
         # Shadow slides toward the unlit limb; waxing moon is lit on the right
         offset = 2.2 * radius * self.moon_illumination
         direction = -1 if self.moon_waxing else 1
-        zenith, _ = sky_palette(self.sun_alt_deg)
+        zenith, _ = sky_palette(self.effective_sun_alt())
         shadow_center = (center + direction * offset, center)
         pygame.draw.circle(surf, (*zenith, 245), shadow_center, radius * 1.02)
         self.screen.blit(surf, (x - center, y - center))
@@ -688,6 +696,9 @@ class StarryNightApp:
             f"{location} | Sun {self.sun_alt_deg:+.0f}° | Moon {self.moon_illumination:.0%} {self.moon_phase_name}",
             True, GRAY)
         self.screen.blit(loc_text, (self.width - loc_text.get_width() - 190, 14))
+        if self.always_night:
+            badge = self.fonts[20].render("ALWAYS NIGHT (N to disable)", True, ACCENT)
+            self.screen.blit(badge, (self.width - badge.get_width() - 190, 48))
 
         hint = self.fonts[20].render(
             "Drag or arrow keys to look around | scroll to zoom | click an object for details | C for help",
@@ -703,6 +714,7 @@ class StarryNightApp:
             ("+ / -", "time speed"),
             ("R", "reset time"),
             ("K", "constellations"),
+            ("N", "always night on/off"),
             ("L", "toggle labels"),
             ("T", "hide/show selection"),
             ("C", "toggle this panel"),

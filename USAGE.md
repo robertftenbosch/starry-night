@@ -6,7 +6,7 @@ Starry Night is a desktop planetarium that shows the real night sky for your loc
 ## Features
 - Real star positions (J2000 catalog) with 21 constellation figures
 - Sun, Moon (with phase), and all seven planets from real ephemerides
-- Day/night cycle with twilight colors; stars fade with the brightening sky
+- Day/night cycle with twilight colors; stars fade with the brightening sky (toggle "always night" with N to keep the sky dark)
 - Time playback from real-time up to a month per second
 - Linux installer support
 
@@ -64,7 +64,7 @@ starry-night
    - Magnitude (brightness) and current azimuth/altitude
    - The Moon additionally shows its phase and illumination
 5. **Play time** with SPACE and change speed with + / -; the sky rotates as the Earth turns, the Moon cycles through phases, and planets wander. R resets the time
-6. Other keys: K toggles constellation figures, L toggles labels, T hides/shows the selected object, C toggles the control panel, ESC deselects (or quits when nothing is selected)
+6. Other keys: K toggles constellation figures, N toggles "always night" (dark sky even in daytime), L toggles labels, T hides/shows the selected object, C toggles the control panel, ESC deselects (or quits when nothing is selected)
 
 ## Customization
 

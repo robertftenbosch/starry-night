@@ -96,6 +96,26 @@ def test_day_night_cycle():
     assert limiting_magnitude(10) < 0   # (almost) none in daylight
 
 
+def test_always_night_keeps_the_sky_dark(app):
+    # Force midday, then toggle always-night: the sky must go dark and
+    # stars must become visible again
+    app.time_manager.current_time = datetime.datetime(2026, 7, 5, 11, 0,
+                                                      tzinfo=datetime.timezone.utc)
+    app.update_sky(force=True)
+    assert app.sun_alt_deg > 30
+    day_background = app.sky_background.get_at((10, app.height // 2))
+    assert limiting_magnitude(app.effective_sun_alt()) < 0
+
+    app.handle_key(pygame.K_n)
+    night_background = app.sky_background.get_at((10, app.height // 2))
+    assert sum(night_background[:3]) < sum(day_background[:3]) - 200
+    assert limiting_magnitude(app.effective_sun_alt()) > 6
+    app.draw()
+
+    app.handle_key(pygame.K_n)  # toggles back
+    assert app.effective_sun_alt() == app.sun_alt_deg
+
+
 def test_frames_render_and_window_resizes(app):
     for _ in range(3):
         app.update()
