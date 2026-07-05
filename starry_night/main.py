@@ -31,6 +31,7 @@ CYAN = (0, 255, 255)
 PINK = (255, 192, 203)
 GRAY = (128, 128, 128)
 DARK_GRAY = (64, 64, 64)
+LIGHT_GRAY = (200, 200, 200)
 
 @dataclass
 class CelestialObject:
@@ -63,6 +64,9 @@ class CelestialObject:
             # 1 orbit = 2π radians, period is in days, time_delta is in seconds
             orbital_speed = (2 * math.pi) / (self.orbital_period * 86400)  # radians per second
             self.angle += orbital_speed * time_delta
+
+            # Keep angle within 0-2π range to prevent overflow
+            self.angle = self.angle % (2 * math.pi)
 
     def draw(self, surface, mouse_pos=None, time_scale=1.0):
         """Draw the celestial object"""
@@ -154,6 +158,7 @@ class Compass:
             180: "S", # South
             270: "W" # West
         }
+        self.font = pygame.font.SysFont(None, 24)
 
     def draw(self, surface):
         """Draw the compass"""
@@ -175,16 +180,14 @@ class Compass:
             if angle in self.directions:
                 label_x = self.center_x + (self.radius + 20) * math.cos(rad_angle)
                 label_y = self.center_y + (self.radius + 20) * math.sin(rad_angle)
-                font = pygame.font.SysFont(None, 24)
-                text = font.render(self.directions[angle], True, WHITE)
+                text = self.font.render(self.directions[angle], True, WHITE)
                 surface.blit(text, (label_x - text.get_width() // 2, label_y - text.get_height() // 2))
 
         # Draw center point
         pygame.draw.circle(surface, WHITE, (self.center_x, self.center_y), 5)
 
         # Draw north indicator
-        font = pygame.font.SysFont(None, 24)
-        north_text = font.render("N", True, WHITE)
+        north_text = self.font.render("N", True, WHITE)
         surface.blit(north_text, (self.center_x - north_text.get_width() // 2, self.center_y - self.radius - 30))
 
 class StarryNightApp:
@@ -380,13 +383,18 @@ class StarryNightApp:
         time_text = font.render(f"Time: {time_str} | Speed: {self.time_manager.get_current_speed_name()}", True, WHITE)
         screen.blit(time_text, (20, 20))
 
+        # Draw rotation indicator
+        font = pygame.font.SysFont(None, 20)
+        rotation_text = font.render(f"Rotation: X={self.rotation_x:.2f}, Y={self.rotation_y:.2f}", True, LIGHT_GRAY)
+        screen.blit(rotation_text, (20, 50))
+
         # Draw controls if visible
         if self.show_controls:
             self.draw_controls()
 
         # Draw instructions
         font = pygame.font.SysFont(None, 24)
-        instructions = font.render("Controls: SPACE (play/pause), R (reset), UP/DOWN (speed), C (toggle controls), T (toggle object), ESC (quit), MOUSE (rotate view)", True, WHITE)
+        instructions = font.render("Controls: SPACE (play/pause), R (reset), UP/DOWN (speed), C (toggle controls), T (toggle object), MOUSE (rotate view), ESC (quit)", True, WHITE)
         screen.blit(instructions, (WIDTH // 2 - instructions.get_width() // 2, HEIGHT - 40))
 
         pygame.display.flip()
@@ -400,18 +408,27 @@ class StarryNightApp:
             color = (0, 0, intensity)
             pygame.draw.line(screen, color, (0, y), (WIDTH, y))
 
+        # Draw some stars in the background for more depth
+        for _ in range(100):
+            x = random.randint(0, WIDTH)
+            y = random.randint(0, HEIGHT // 2)
+            size = random.uniform(0.5, 1.5)
+            brightness = random.randint(100, 255)
+            pygame.draw.circle(screen, (brightness, brightness, brightness), (x, y), size)
+
     def draw_controls(self):
         """Draw control panel"""
         # Draw control panel background
-        panel_width = 300
-        panel_height = 200
+        panel_width = 320
+        panel_height = 220
         panel_x = 20
         panel_y = 60
 
-        pygame.draw.rect(screen, (30, 30, 50, 180), (panel_x, panel_y, panel_width, panel_height))
-        pygame.draw.rect(screen, WHITE, (panel_x, panel_y, panel_width, panel_height), 2)
+        # Draw semi-transparent background
+        pygame.draw.rect(screen, (30, 30, 50, 200), (panel_x, panel_y, panel_width, panel_height))
+        pygame.draw.rect(screen, LIGHT_GRAY, (panel_x, panel_y, panel_width, panel_height), 2)
 
-        font = pygame.font.SysFont(None, 24)
+        font = pygame.font.SysFont(None, 26)
         title = font.render("Controls", True, WHITE)
         screen.blit(title, (panel_x + 10, panel_y + 10))
 
@@ -423,11 +440,12 @@ class StarryNightApp:
             "UP/DOWN: Speed",
             "C: Toggle Controls",
             "T: Toggle Object",
+            "MOUSE: Rotate View",
             "ESC: Quit"
         ]
 
         for i, control in enumerate(controls):
-            text = font_small.render(control, True, WHITE)
+            text = font_small.render(control, True, LIGHT_GRAY)
             screen.blit(text, (panel_x + 10, panel_y + 40 + i * 20))
 
     def run(self):
