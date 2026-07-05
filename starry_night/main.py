@@ -299,6 +299,9 @@ class StarryNightApp:
 
                     # Limit vertical rotation to prevent flipping
                     self.rotation_y = max(-math.pi/2, min(math.pi/2, self.rotation_y))
+
+                    # Store current mouse position for next calculation
+                    self.last_mouse_pos = event.pos
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
                     self.mouse_pressed = True
