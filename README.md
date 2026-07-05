@@ -7,7 +7,7 @@ A desktop planetarium that shows the real night sky for your location, with inte
 - **The Real Sky**: Stars come from a catalog with true J2000 coordinates; the whole sky rotates with (simulated) time as the Earth turns, matching what you would actually see outside
 - **Constellations**: Stick figures and names for 21 well-known constellations (Orion, Ursa Major, Cassiopeia, Cygnus, Crux, ...)
 - **Sun, Moon & Planets**: Computed from real ephemerides — the Moon shows its current phase, and all seven planets follow their Keplerian orbits
-- **Day/Night Cycle**: The sky brightens through dawn, turns blue at day, and glows orange at sunset; stars fade in and out with twilight
+- **Day/Night Cycle**: The sky brightens through dawn, turns blue at day, and glows orange at sunset; stars fade in and out with twilight (press N for "always night" to keep the sky dark)
 - **Time Playback**: Play through time from real-time up to a month per second — watch stars rise and set, the Moon cycle through phases, and planets wander
 - **Mouse & Keyboard Navigation**: Drag (or use the arrow keys) to look around, scroll to zoom
 - **Object Selection**: Click any object for a detail panel; hover for a quick tooltip
@@ -85,6 +85,7 @@ starry-night --lat 40.7 --lon -74.0   # New York
 - **+ / -**: Change time speed
 - **R**: Reset to start time
 - **K**: Toggle constellation figures and names
+- **N**: Toggle "always night" — keeps the sky dark and the stars visible even in daytime
 - **L**: Toggle object labels
 - **T**: Toggle visibility of the selected object
 - **C**: Toggle the control panel
