@@ -7,7 +7,16 @@ A desktop planetarium that shows the real night sky for your location, with inte
 - **The Real Sky**: Stars come from a catalog with true J2000 coordinates; the whole sky rotates with (simulated) time as the Earth turns, matching what you would actually see outside
 - **Constellations**: Stick figures and names for 21 well-known constellations (Orion, Ursa Major, Cassiopeia, Cygnus, Crux, ...)
 - **Sun, Moon & Planets**: Computed from real ephemerides — the Moon shows its current phase, and all seven planets follow their Keplerian orbits
+- **Deep-Sky Objects**: 26 showpieces (Orion Nebula, Pleiades, Hercules Cluster, Ring Nebula, ...) with type-specific rendering for nebulae, clusters, and galaxies
+- **Search & Go-To**: Press S, type a name or Messier number ("M42", "Jupiter", "Orion"), and the camera glides to it
+- **Follow Mode**: Press F to lock the camera on the selected object while time plays — follow the Moon through its phases for a month
+- **Jump to Date/Time**: Press D and enter any date to see that night's sky ("the sky on my birthday")
+- **Rise & Set Times**: The detail panel shows when the selected object rises and sets today
+- **Milky Way**: A faint band of glow along the galactic plane
+- **Sky Grids & Ecliptic**: Press G to cycle an alt/az grid or an RA/Dec grid with the ecliptic
+- **Meteor Showers**: Shooting stars from the radiant around shower peaks (Perseids, Geminids, Quadrantids, ...)
 - **Day/Night Cycle**: The sky brightens through dawn, turns blue at day, and glows orange at sunset; stars fade in and out with twilight (press N for "always night" to keep the sky dark)
+- **Night Vision**: Press V for a red-light mode that preserves your dark adaptation at the telescope
 - **Time Playback**: Play through time from real-time up to a month per second — watch stars rise and set, the Moon cycle through phases, and planets wander
 - **Mouse & Keyboard Navigation**: Drag (or use the arrow keys) to look around, scroll to zoom
 - **Object Selection**: Click any object for a detail panel; hover for a quick tooltip
@@ -81,15 +90,20 @@ starry-night --lat 40.7 --lon -74.0   # New York
 - **Mouse drag / Arrow keys**: Look around (rotate the view)
 - **Scroll wheel**: Zoom in/out
 - **Click**: Select an object and show its detail panel
+- **S or /**: Search an object or constellation and glide to it (type, pick with UP/DOWN, ENTER)
+- **F**: Follow the selected object (camera stays locked while time plays)
+- **D**: Jump to a date/time (`YYYY-MM-DD [HH:MM]`, local time)
 - **Spacebar**: Start/pause time playback
 - **+ / -**: Change time speed
 - **R**: Reset to start time
+- **G**: Cycle sky grids: off → alt/az grid → RA/Dec grid + ecliptic
 - **K**: Toggle constellation figures and names
 - **N**: Toggle "always night" — keeps the sky dark and the stars visible even in daytime
+- **V**: Toggle night vision (red-light mode)
 - **L**: Toggle object labels
 - **T**: Toggle visibility of the selected object
 - **C**: Toggle the control panel
-- **ESC**: Deselect object, or quit when nothing is selected
+- **ESC**: Stop following / deselect / quit
 
 ### Navigation
 1. **View Rotation**: Click and drag with the mouse (or use the arrow keys) — the sky follows your mouse
@@ -100,7 +114,9 @@ starry-night --lat 40.7 --lon -74.0   # New York
 
 ### Tips
 - Around midnight, look south for the season's constellations (Orion in winter, Cygnus and Lyra in summer)
-- Set the speed to "1 day/s" and watch the Moon race through its phases
+- Search "M42" and zoom in on the Orion Nebula, or search "Pleiades" for the Seven Sisters
+- Select the Moon, press F to follow it, set the speed to "1 day/s", and watch it race through its phases
+- Jump to August 12 (D key) for the Perseid meteor shower
 - The status bar shows the sun's altitude and the current moon phase
 
 ### Information Display
