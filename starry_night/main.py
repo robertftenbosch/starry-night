@@ -195,11 +195,15 @@ class StarryNightApp:
         self.clock = pygame.time.Clock()
         self.running = True
         self.mouse_pos = None
+        self.mouse_pressed = False
+        self.last_mouse_pos = None
         self.time_manager = TimeManager()
         self.show_controls = True
         self.selected_object = None
         self.object_visibility = {}
         self.compass = Compass(WIDTH - 100, 100, 60)
+        self.rotation_x = 0  # Horizontal rotation
+        self.rotation_y = 0  # Vertical rotation
         self.create_celestial_objects()
         self.setup_object_visibility()
 
@@ -284,8 +288,21 @@ class StarryNightApp:
                 self.running = False
             elif event.type == pygame.MOUSEMOTION:
                 self.mouse_pos = event.pos
+                if self.mouse_pressed and self.last_mouse_pos:
+                    # Calculate mouse movement delta
+                    dx = event.pos[0] - self.last_mouse_pos[0]
+                    dy = event.pos[1] - self.last_mouse_pos[1]
+
+                    # Update rotation based on mouse movement
+                    self.rotation_x += dx * 0.01
+                    self.rotation_y += dy * 0.01
+
+                    # Limit vertical rotation to prevent flipping
+                    self.rotation_y = max(-math.pi/2, min(math.pi/2, self.rotation_y))
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
+                    self.mouse_pressed = True
+                    self.last_mouse_pos = event.pos
                     # Check if clicked on an object
                     for obj in reversed(self.objects):  # Check from front to back
                         if obj.is_hovered(self.mouse_pos):
@@ -293,12 +310,14 @@ class StarryNightApp:
                             break
                     else:
                         self.selected_object = None
-                elif event.button == 4:  # Scroll up
-                    # Zoom in
+                elif event.button == 4:  # Scroll up - zoom in
                     pass
-                elif event.button == 5:  # Scroll down
-                    # Zoom out
+                elif event.button == 5:  # Scroll down - zoom out
                     pass
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1:  # Left mouse button released
+                    self.mouse_pressed = False
+                    self.last_mouse_pos = None
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
                     self.time_manager.toggle_playback()
@@ -364,7 +383,7 @@ class StarryNightApp:
 
         # Draw instructions
         font = pygame.font.SysFont(None, 24)
-        instructions = font.render("Controls: SPACE (play/pause), R (reset), UP/DOWN (speed), C (toggle controls), T (toggle object), ESC (quit)", True, WHITE)
+        instructions = font.render("Controls: SPACE (play/pause), R (reset), UP/DOWN (speed), C (toggle controls), T (toggle object), ESC (quit), MOUSE (rotate view)", True, WHITE)
         screen.blit(instructions, (WIDTH // 2 - instructions.get_width() // 2, HEIGHT - 40))
 
         pygame.display.flip()
