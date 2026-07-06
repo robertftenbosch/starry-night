@@ -154,3 +154,52 @@ GALAXIES = [
     ("Whirlpool Galaxy", 13.498, 47.20, 8.4, 23e6, "Grand-design spiral galaxy"),
     ("Sombrero Galaxy", 12.666, -11.62, 8.0, 29e6, "Galaxy with a prominent dust lane"),
 ]
+
+# Deep-sky showpieces (mostly Messier objects).
+# name, alias, ra_hours, dec_deg, mag, type, dist_ly, description
+# type: "nebula", "planetary", "open_cluster", "globular", "galaxy"
+DEEP_SKY = [
+    ("Orion Nebula", "M42", 5.588, -5.39, 4.0, "nebula", 1344, "Bright stellar nursery in Orion's sword"),
+    ("Pleiades", "M45", 3.790, 24.12, 1.6, "open_cluster", 444, "The Seven Sisters open cluster"),
+    ("Hercules Cluster", "M13", 16.695, 36.46, 5.8, "globular", 22200, "Great globular cluster in Hercules"),
+    ("Ring Nebula", "M57", 18.893, 33.03, 8.8, "planetary", 2300, "Famous planetary nebula in Lyra"),
+    ("Dumbbell Nebula", "M27", 19.994, 22.72, 7.4, "planetary", 1360, "Bright planetary nebula in Vulpecula"),
+    ("Crab Nebula", "M1", 5.575, 22.01, 8.4, "nebula", 6500, "Supernova remnant from the year 1054"),
+    ("Lagoon Nebula", "M8", 18.060, -24.38, 6.0, "nebula", 4100, "Emission nebula in Sagittarius"),
+    ("Omega Nebula", "M17", 18.340, -16.18, 6.0, "nebula", 5000, "Also known as the Swan Nebula"),
+    ("Trifid Nebula", "M20", 18.030, -23.03, 6.3, "nebula", 5200, "Three-lobed emission nebula"),
+    ("Eagle Nebula", "M16", 18.313, -13.78, 6.4, "nebula", 5700, "Home of the Pillars of Creation"),
+    ("Beehive Cluster", "M44", 8.670, 19.98, 3.7, "open_cluster", 577, "Naked-eye open cluster in Cancer"),
+    ("Wild Duck Cluster", "M11", 18.851, -6.27, 6.3, "open_cluster", 6200, "Compact open cluster in Scutum"),
+    ("Gemini Cluster", "M35", 6.148, 24.34, 5.3, "open_cluster", 2800, "Rich open cluster at Gemini's foot"),
+    ("Little Beehive", "M41", 6.767, -20.73, 4.5, "open_cluster", 2300, "Open cluster south of Sirius"),
+    ("Ptolemy Cluster", "M7", 17.897, -34.79, 3.3, "open_cluster", 980, "Naked-eye cluster in Scorpius"),
+    ("Butterfly Cluster", "M6", 17.668, -32.25, 4.2, "open_cluster", 1600, "Open cluster shaped like a butterfly"),
+    ("Double Cluster", "NGC 869/884", 2.320, 57.13, 3.7, "open_cluster", 7500, "Twin open clusters in Perseus"),
+    ("Sagittarius Cluster", "M22", 18.607, -23.90, 5.1, "globular", 10600, "One of the brightest globulars"),
+    ("M3", "M3", 13.703, 28.38, 6.2, "globular", 33900, "Globular with ~500,000 stars"),
+    ("M5", "M5", 15.310, 2.08, 5.6, "globular", 24500, "One of the oldest known globulars"),
+    ("M92", "M92", 17.285, 43.13, 6.4, "globular", 26700, "Second globular in Hercules"),
+    ("Omega Centauri", "NGC 5139", 13.446, -47.48, 3.9, "globular", 15800, "Largest globular of the Milky Way"),
+    ("47 Tucanae", "NGC 104", 0.401, -72.08, 4.1, "globular", 13000, "Southern showpiece globular"),
+    ("Carina Nebula", "NGC 3372", 10.750, -59.87, 3.0, "nebula", 8500, "Giant southern nebula around Eta Carinae"),
+    ("Triangulum Galaxy", "M33", 1.564, 30.66, 5.7, "galaxy", 2.7e6, "Third-largest galaxy of the Local Group"),
+    ("Bode's Galaxy", "M81", 9.926, 69.07, 6.9, "galaxy", 12e6, "Bright spiral near the Big Dipper"),
+]
+
+# Galactic north pole (J2000), used to paint the Milky Way band
+GALACTIC_POLE_RA_HOURS = 12.857
+GALACTIC_POLE_DEC_DEG = 27.13
+
+# Major meteor showers.
+# name, radiant ra_hours, radiant dec_deg, peak (month, day), active window
+# in days around the peak, zenithal hourly rate at peak
+METEOR_SHOWERS = [
+    ("Quadrantids", 15.30, 49.5, (1, 3), 4, 110),
+    ("Lyrids", 18.07, 34.0, (4, 22), 5, 18),
+    ("Eta Aquariids", 22.47, -1.0, (5, 6), 12, 50),
+    ("Perseids", 3.07, 58.0, (8, 12), 16, 100),
+    ("Orionids", 6.35, 15.6, (10, 21), 14, 20),
+    ("Leonids", 10.27, 21.8, (11, 17), 6, 15),
+    ("Geminids", 7.55, 32.4, (12, 14), 7, 150),
+]

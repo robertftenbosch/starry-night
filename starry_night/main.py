@@ -18,7 +18,8 @@ from typing import List, Optional, Tuple
 import pygame
 
 from . import astronomy
-from .catalog import CONSTELLATION_LINES, GALAXIES, STARS
+from .catalog import (CONSTELLATION_LINES, DEEP_SKY, GALAXIES,
+                      GALACTIC_POLE_DEC_DEG, GALACTIC_POLE_RA_HOURS, STARS)
 
 # Colors
 WHITE = (255, 255, 255)
@@ -27,6 +28,21 @@ LIGHT_GRAY = (200, 200, 200)
 LIGHT_BLUE = (173, 216, 230)
 HORIZON_COLOR = (90, 105, 130)
 CONSTELLATION_COLOR = (70, 95, 140)
+ALTAZ_GRID_COLOR = (45, 62, 82)
+EQUATORIAL_GRID_COLOR = (72, 55, 88)
+ECLIPTIC_COLOR = (150, 105, 55)
+DEEP_SKY_COLORS = {
+    "nebula": (255, 130, 160),
+    "planetary": (150, 255, 210),
+    "open_cluster": (180, 210, 255),
+    "globular": (255, 220, 170),
+    "galaxy": (200, 170, 255),
+}
+DEEP_SKY_TYPE_NAMES = {
+    "nebula": "Nebula", "planetary": "Planetary nebula",
+    "open_cluster": "Open cluster", "globular": "Globular cluster",
+    "galaxy": "Galaxy",
+}
 PANEL_BG = (18, 22, 40, 215)
 PANEL_BORDER = (110, 130, 180)
 ACCENT = (255, 210, 100)
@@ -100,7 +116,8 @@ class CelestialObject:
     dec: float
     mag: float
     color: Tuple[int, int, int]
-    type: str = "star"  # "star", "planet", "galaxy", "sun", "moon"
+    type: str = "star"  # star, planet, galaxy, sun, moon, nebula, planetary, open_cluster, globular
+    alias: str = ""     # catalog designation such as "M42"
     info: str = ""
     distance_ly: float = 0.0
     distance_au: float = 0.0
@@ -261,6 +278,18 @@ class StarryNightApp:
         self.show_labels = True
         self.show_constellations = True
         self.always_night = False  # ignore daylight: keep the sky dark
+        self.night_vision = False  # red-light mode to preserve dark adaptation
+        self.grid_mode = 0         # 0 = off, 1 = alt/az grid, 2 = RA/Dec grid + ecliptic
+        self.follow_target = None  # object or ("constellation", name) the camera eases toward
+        self.follow_transient = False  # True: stop following on arrival (go-to)
+        self._last_target_azalt = None
+        self.input_mode = None     # None, "search", or "date"
+        self.input_text = ""
+        self.input_error = ""
+        self.input_selection = 0
+        self.search_matches = []
+        self.meteors = []
+        self._riseset_cache = {}
         self.selected_object: Optional[CelestialObject] = None
         self.hovered_object: Optional[CelestialObject] = None
         self.compass = Compass(56)
@@ -316,6 +345,15 @@ class StarryNightApp:
                 name, math.radians(ra_h * 15), math.radians(dec_d), mag,
                 (200, 170, 255), "galaxy", info=info, distance_ly=dist, labeled=True))
 
+        for name, alias, ra_h, dec_d, mag, ds_type, dist, info in DEEP_SKY:
+            self.objects.append(CelestialObject(
+                name, math.radians(ra_h * 15), math.radians(dec_d), mag,
+                DEEP_SKY_COLORS[ds_type], ds_type, alias=alias, info=info,
+                distance_ly=dist, labeled=mag <= 4.5))
+
+        self.build_milky_way()
+        self.build_grid_lines()
+
         # Solar-system bodies; RA/Dec filled in by update_sky()
         self.sun = CelestialObject("Sun", 0, 0, -26.7, (255, 240, 180), "sun",
                                    info="Our star", labeled=True)
@@ -338,6 +376,69 @@ class StarryNightApp:
         self.moon_illumination = 0.0
         self.moon_waxing = True
         self.moon_phase_name = ""
+
+    def build_milky_way(self):
+        """Scatter faint fuzzy patches along the galactic plane."""
+        pole_ra = math.radians(GALACTIC_POLE_RA_HOURS * 15)
+        pole_dec = math.radians(GALACTIC_POLE_DEC_DEG)
+        px = math.cos(pole_dec) * math.cos(pole_ra)
+        py = math.cos(pole_dec) * math.sin(pole_ra)
+        pz = math.sin(pole_dec)
+        # Orthonormal basis in the galactic plane
+        norm = math.hypot(py, -px)
+        ux, uy, uz = py / norm, -px / norm, 0.0
+        vx = py * uz - pz * uy
+        vy = pz * ux - px * uz
+        vz = px * uy - py * ux
+
+        rnd = random.Random(42)
+        self.milky_way = []
+        for _ in range(420):
+            theta = rnd.uniform(0, 2 * math.pi)
+            band_lat = rnd.gauss(0, math.radians(5.5))
+            cb, sb = math.cos(band_lat), math.sin(band_lat)
+            dx = cb * (math.cos(theta) * ux + math.sin(theta) * vx) + sb * px
+            dy = cb * (math.cos(theta) * uy + math.sin(theta) * vy) + sb * py
+            dz = cb * (math.cos(theta) * uz + math.sin(theta) * vz) + sb * pz
+            dec = math.asin(max(-1.0, min(1.0, dz)))
+            ra = math.atan2(dy, dx) % (2 * math.pi)
+            self.milky_way.append({
+                "ra": ra, "sin_dec": math.sin(dec), "cos_dec": math.cos(dec),
+                "size": rnd.randint(10, 26), "alpha": rnd.randint(8, 18),
+                "azimuth": 0.0, "altitude": -1.0,
+            })
+        # Pre-rendered fuzzy sprites, keyed by (size, alpha)
+        self._blob_cache = {}
+
+    def milky_way_sprite(self, size: int, alpha: int):
+        key = (size, alpha)
+        sprite = self._blob_cache.get(key)
+        if sprite is None:
+            sprite = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
+            for r, a in ((size, alpha), (int(size * 0.6), alpha)):
+                pygame.draw.circle(sprite, (185, 195, 235, a), (size, size), r)
+            self._blob_cache[key] = sprite
+        return sprite
+
+    def build_grid_lines(self):
+        """Precompute RA/Dec grid and ecliptic polylines (fixed in RA/Dec)."""
+        def point(ra, dec):
+            return (ra, math.sin(dec), math.cos(dec))
+
+        self.equatorial_grid = []
+        for dec_deg in range(-60, 61, 30):
+            dec = math.radians(dec_deg)
+            self.equatorial_grid.append(
+                [point(math.radians(ra_deg), dec) for ra_deg in range(0, 361, 5)])
+        for ra_deg in range(0, 360, 30):
+            ra = math.radians(ra_deg)
+            self.equatorial_grid.append(
+                [point(ra, math.radians(dec_deg)) for dec_deg in range(-75, 76, 5)])
+
+        self.ecliptic_line = []
+        for lon_deg in range(0, 361, 3):
+            ra, dec = astronomy.ecliptic_to_equatorial(math.radians(lon_deg), 0.0)
+            self.ecliptic_line.append(point(ra, dec))
 
     # ------------------------------------------------------------ sky updates
 
@@ -363,6 +464,10 @@ class StarryNightApp:
 
         for obj in self.objects:
             obj.update_horizontal(lst, self.sin_lat, self.cos_lat)
+        for patch in self.milky_way:
+            patch["azimuth"], patch["altitude"] = astronomy.equatorial_to_horizontal(
+                patch["sin_dec"], patch["cos_dec"], patch["ra"], lst,
+                self.sin_lat, self.cos_lat)
         self.sun_alt_deg = math.degrees(self.sun.altitude)
         self.refresh_sky_background()
 
@@ -427,6 +532,7 @@ class StarryNightApp:
                     dx, dy = event.rel
                     if abs(dx) + abs(dy) > 2:
                         self.drag_moved = True
+                        self.stop_following()
                     # Grab-the-sky: the scene follows the mouse
                     sensitivity = self.fov / self.height
                     self.yaw = (self.yaw - dx * sensitivity) % (2 * math.pi)
@@ -445,7 +551,10 @@ class StarryNightApp:
                 zoom = math.exp(-event.y * 0.1)
                 self.fov = max(self.MIN_FOV, min(self.MAX_FOV, self.fov * zoom))
             elif event.type == pygame.KEYDOWN:
-                self.handle_key(event.key)
+                if self.input_mode:
+                    self.handle_input_key(event)
+                else:
+                    self.handle_key(event.key)
 
     def handle_key(self, key):
         if key == pygame.K_SPACE:
@@ -462,6 +571,21 @@ class StarryNightApp:
         elif key == pygame.K_n:
             self.always_night = not self.always_night
             self.refresh_sky_background()
+        elif key == pygame.K_v:
+            self.night_vision = not self.night_vision
+        elif key == pygame.K_g:
+            self.grid_mode = (self.grid_mode + 1) % 3
+        elif key in (pygame.K_s, pygame.K_SLASH):
+            self.open_input("search")
+        elif key == pygame.K_d:
+            self.open_input("date")
+        elif key == pygame.K_f:
+            if self.follow_target and not self.follow_transient:
+                self.stop_following()
+            elif self.selected_object:
+                self.follow_target = self.selected_object
+                self.follow_transient = False
+                self._last_target_azalt = None
         elif key in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS):
             self.time_manager.change_speed(1)
         elif key in (pygame.K_MINUS, pygame.K_KP_MINUS):
@@ -470,7 +594,9 @@ class StarryNightApp:
             if self.selected_object:
                 self.selected_object.is_visible = not self.selected_object.is_visible
         elif key == pygame.K_ESCAPE:
-            if self.selected_object:
+            if self.follow_target:
+                self.stop_following()
+            elif self.selected_object:
                 self.selected_object = None
             else:
                 self.running = False
@@ -487,32 +613,221 @@ class StarryNightApp:
                 best, best_dist = obj, dist
         self.selected_object = best
 
+    # ------------------------------------------------------- search & follow
+
+    def open_input(self, mode: str):
+        self.input_mode = mode
+        self.input_error = ""
+        self.input_selection = 0
+        self.search_matches = []
+        if mode == "date":
+            self.input_text = self.time_manager.current_time.astimezone().strftime("%Y-%m-%d %H:%M")
+        else:
+            self.input_text = ""
+
+    def handle_input_key(self, event):
+        if event.key == pygame.K_ESCAPE:
+            self.input_mode = None
+        elif event.key == pygame.K_BACKSPACE:
+            self.input_text = self.input_text[:-1]
+            self.input_error = ""
+        elif event.key in (pygame.K_UP, pygame.K_DOWN) and self.input_mode == "search":
+            if self.search_matches:
+                step = 1 if event.key == pygame.K_DOWN else -1
+                self.input_selection = (self.input_selection + step) % len(self.search_matches)
+        elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if self.input_mode == "search":
+                self.commit_search()
+            else:
+                self.commit_date()
+        elif event.unicode and event.unicode.isprintable():
+            self.input_text += event.unicode
+            self.input_error = ""
+            self.input_selection = 0
+        if self.input_mode == "search":
+            self.search_matches = self.find_matches(self.input_text)
+
+    def find_matches(self, query: str):
+        """Match objects and constellations by name or catalog alias."""
+        query = query.strip().lower()
+        if not query:
+            return []
+        matches = []
+        for obj in self.objects:
+            if obj.name.startswith("Star "):
+                continue
+            for candidate in (obj.name, obj.alias):
+                if candidate and query in candidate.lower():
+                    rank = 0 if candidate.lower().startswith(query) else 1
+                    label = f"{obj.name} ({obj.alias})" if obj.alias else obj.name
+                    matches.append((rank, len(candidate), label, obj))
+                    break
+        for constellation in CONSTELLATION_LINES:
+            if query in constellation.lower():
+                rank = 0 if constellation.lower().startswith(query) else 1
+                matches.append((rank, len(constellation), f"{constellation} (constellation)",
+                                ("constellation", constellation)))
+        matches.sort(key=lambda m: (m[0], m[1], m[2]))
+        return [(label, target) for _, _, label, target in matches[:6]]
+
+    def commit_search(self):
+        if not self.search_matches:
+            self.input_error = "No match found"
+            return
+        _, target = self.search_matches[self.input_selection]
+        if isinstance(target, CelestialObject):
+            self.selected_object = target
+        self.follow_target = target
+        self.follow_transient = True
+        self._last_target_azalt = None
+        self.input_mode = None
+
+    def commit_date(self):
+        text = self.input_text.strip()
+        parsed = None
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                parsed = datetime.datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+        if parsed is None:
+            self.input_error = "Use YYYY-MM-DD [HH:MM]"
+            return
+        local_tz = datetime.datetime.now().astimezone().tzinfo
+        self.time_manager.current_time = parsed.replace(tzinfo=local_tz).astimezone(
+            datetime.timezone.utc)
+        self.update_sky(force=True)
+        self.input_mode = None
+
+    def stop_following(self):
+        self.follow_target = None
+        self.follow_transient = False
+        self._last_target_azalt = None
+
+    def target_azalt(self):
+        """Current azimuth/altitude of the follow target."""
+        target = self.follow_target
+        if isinstance(target, CelestialObject):
+            return target.azimuth, target.altitude
+        _, name = target
+        x = y = z = 0.0
+        for pair in CONSTELLATION_LINES[name]:
+            for star_name in pair:
+                dx, dy, dz = self.stars_by_name[star_name].direction()
+                x, y, z = x + dx, y + dy, z + dz
+        length = math.sqrt(x * x + y * y + z * z) or 1.0
+        return math.atan2(x, z) % (2 * math.pi), math.asin(max(-1.0, min(1.0, y / length)))
+
+    def follow_camera(self, delta_time: float):
+        """Ease the camera toward the follow target; hard-track its motion."""
+        if self.follow_target is None:
+            return
+        target_az, target_alt = self.target_azalt()
+        if self._last_target_azalt is not None:
+            # Feed-forward: move exactly with the target so tracking stays
+            # locked even at high time-lapse speeds
+            last_az, last_alt = self._last_target_azalt
+            self.yaw = (self.yaw + self.wrap_angle(target_az - last_az)) % (2 * math.pi)
+            self.pitch += target_alt - last_alt
+        self._last_target_azalt = (target_az, target_alt)
+
+        d_yaw = self.wrap_angle(target_az - self.yaw)
+        d_pitch = target_alt - self.pitch
+        factor = 1 - math.exp(-6 * max(delta_time, 1e-3))
+        self.yaw = (self.yaw + d_yaw * factor) % (2 * math.pi)
+        self.pitch = max(math.radians(-89), min(math.radians(89),
+                                                self.pitch + d_pitch * factor))
+        if self.follow_transient and abs(d_yaw) < 0.003 and abs(d_pitch) < 0.003:
+            self.stop_following()
+
+    @staticmethod
+    def wrap_angle(angle: float) -> float:
+        """Wrap an angle difference to [-pi, pi]."""
+        return (angle + math.pi) % (2 * math.pi) - math.pi
+
     # ----------------------------------------------------------------- update
 
     def update(self):
         delta_time = self.clock.get_time() / 1000.0
-        keys = pygame.key.get_pressed()
-        rot_speed = self.fov * delta_time
-        if keys[pygame.K_LEFT]:
-            self.yaw = (self.yaw - rot_speed) % (2 * math.pi)
-        if keys[pygame.K_RIGHT]:
-            self.yaw = (self.yaw + rot_speed) % (2 * math.pi)
-        if keys[pygame.K_UP]:
-            self.pitch = min(math.radians(89), self.pitch + rot_speed)
-        if keys[pygame.K_DOWN]:
-            self.pitch = max(math.radians(-89), self.pitch - rot_speed)
+        if not self.input_mode:
+            keys = pygame.key.get_pressed()
+            rot_speed = self.fov * delta_time
+            if keys[pygame.K_LEFT] or keys[pygame.K_RIGHT] or keys[pygame.K_UP] or keys[pygame.K_DOWN]:
+                self.stop_following()
+            if keys[pygame.K_LEFT]:
+                self.yaw = (self.yaw - rot_speed) % (2 * math.pi)
+            if keys[pygame.K_RIGHT]:
+                self.yaw = (self.yaw + rot_speed) % (2 * math.pi)
+            if keys[pygame.K_UP]:
+                self.pitch = min(math.radians(89), self.pitch + rot_speed)
+            if keys[pygame.K_DOWN]:
+                self.pitch = max(math.radians(-89), self.pitch - rot_speed)
 
         self.time_manager.update(delta_time)
         self.update_sky()
+        if self.follow_target:
+            self.follow_camera(delta_time)
+        self.update_meteors(delta_time)
+
+    def update_meteors(self, delta_time: float):
+        """Spawn meteors from active shower radiants and expire old ones."""
+        now_ticks = pygame.time.get_ticks() / 1000.0
+        self.meteors = [m for m in self.meteors if now_ticks - m["birth"] < m["duration"]]
+        if limiting_magnitude(self.effective_sun_alt()) < 5.0:
+            return  # too bright for meteors
+        lst = self.last_lst or 0.0
+        for _, radiant_ra, radiant_dec, rate in astronomy.shower_activity(
+                self.time_manager.current_time):
+            radiant_az, radiant_alt = astronomy.equatorial_to_horizontal(
+                math.sin(radiant_dec), math.cos(radiant_dec), radiant_ra, lst,
+                self.sin_lat, self.cos_lat)
+            if radiant_alt < 0:
+                continue
+            # ZHR to on-screen meteors: generously boosted for spectacle
+            if random.random() < rate * 40 / 3600 * delta_time:
+                self.meteors.append(self.make_meteor(radiant_az, radiant_alt, now_ticks))
+
+    def make_meteor(self, radiant_az: float, radiant_alt: float, now_ticks: float):
+        """A streak that starts near the radiant and shoots away from it."""
+        cos_alt = math.cos(radiant_alt)
+        rx = cos_alt * math.sin(radiant_az)
+        ry = math.sin(radiant_alt)
+        rz = cos_alt * math.cos(radiant_az)
+        # Random unit vector perpendicular to the radiant direction
+        while True:
+            ax, ay, az_ = (random.uniform(-1, 1) for _ in range(3))
+            wx = ry * az_ - rz * ay
+            wy = rz * ax - rx * az_
+            wz = rx * ay - ry * ax
+            norm = math.sqrt(wx * wx + wy * wy + wz * wz)
+            if norm > 0.1:
+                wx, wy, wz = wx / norm, wy / norm, wz / norm
+                break
+
+        def rotated(angle):
+            c, s = math.cos(angle), math.sin(angle)
+            x, y, z = rx * c + wx * s, ry * c + wy * s, rz * c + wz * s
+            return math.atan2(x, z) % (2 * math.pi), math.asin(max(-1.0, min(1.0, y)))
+
+        start = random.uniform(math.radians(8), math.radians(30))
+        length = random.uniform(math.radians(6), math.radians(16))
+        return {"start": rotated(start), "end": rotated(start + length),
+                "birth": now_ticks, "duration": random.uniform(0.4, 0.8)}
 
     # ------------------------------------------------------------------- draw
 
     def draw(self):
         self.screen.blit(self.sky_background, (0, 0))
         limit = limiting_magnitude(self.effective_sun_alt())
+        if limit > 5.0:
+            self.draw_milky_way(limit)
+        if self.grid_mode:
+            self.draw_grids()
         if self.show_constellations and limit > 3.0:
             self.draw_constellations()
         self.draw_objects(limit)
+        self.draw_meteors()
         self.draw_horizon()
         self.compass.draw(self.screen, (self.width - 90, 96), self.yaw, self.pitch)
         self.draw_hud()
@@ -520,7 +835,99 @@ class StarryNightApp:
             self.draw_controls()
         if self.selected_object:
             self.draw_info_panel(self.selected_object)
+        if self.input_mode:
+            self.draw_input_panel()
+        if self.night_vision:
+            # Red-light mode: keep only the red channel to preserve the
+            # observer's dark adaptation
+            self.screen.fill((255, 40, 40), special_flags=pygame.BLEND_MULT)
         pygame.display.flip()
+
+    def draw_milky_way(self, limit: float):
+        fade = max(0.0, min(1.0, (limit - 5.0) / 3.0))
+        for patch in self.milky_way:
+            if patch["altitude"] < -0.05:
+                continue
+            cos_alt = math.cos(patch["altitude"])
+            direction = (cos_alt * math.sin(patch["azimuth"]),
+                         math.sin(patch["altitude"]),
+                         cos_alt * math.cos(patch["azimuth"]))
+            pos = self.project(direction)
+            if pos is None:
+                continue
+            alpha = max(1, int(patch["alpha"] * fade))
+            sprite = self.milky_way_sprite(patch["size"], alpha)
+            self.screen.blit(sprite, (pos[0] - patch["size"], pos[1] - patch["size"]))
+
+    def draw_polyline(self, points, color, width=1):
+        """Draw projected points as line segments, splitting at gaps."""
+        segment = []
+        for pos in list(points) + [None]:
+            if pos is not None and (not segment or
+                                    abs(pos[0] - segment[-1][0]) + abs(pos[1] - segment[-1][1]) < 400):
+                segment.append(pos)
+            else:
+                if len(segment) >= 2:
+                    pygame.draw.lines(self.screen, color, False, segment, width)
+                segment = [pos] if pos else []
+
+    def draw_grids(self):
+        if self.grid_mode == 1:
+            # Altitude circles and azimuth meridians in the local frame
+            for alt_deg in (30, 60):
+                alt = math.radians(alt_deg)
+                points = []
+                for az_deg in range(0, 361, 5):
+                    az = math.radians(az_deg)
+                    direction = (math.cos(alt) * math.sin(az), math.sin(alt),
+                                 math.cos(alt) * math.cos(az))
+                    points.append(self.project(direction, clip=False))
+                self.draw_polyline(points, ALTAZ_GRID_COLOR)
+            for az_deg in range(0, 360, 30):
+                az = math.radians(az_deg)
+                points = []
+                for alt_deg in range(0, 86, 5):
+                    alt = math.radians(alt_deg)
+                    direction = (math.cos(alt) * math.sin(az), math.sin(alt),
+                                 math.cos(alt) * math.cos(az))
+                    points.append(self.project(direction, clip=False))
+                self.draw_polyline(points, ALTAZ_GRID_COLOR)
+        else:
+            lst = self.last_lst or 0.0
+            for line in self.equatorial_grid:
+                self.draw_polyline(self.project_radec_line(line, lst), EQUATORIAL_GRID_COLOR)
+            self.draw_polyline(self.project_radec_line(self.ecliptic_line, lst),
+                               ECLIPTIC_COLOR, 2)
+
+    def project_radec_line(self, line, lst):
+        for ra, sin_dec, cos_dec in line:
+            az, alt = astronomy.equatorial_to_horizontal(
+                sin_dec, cos_dec, ra, lst, self.sin_lat, self.cos_lat)
+            cos_alt = math.cos(alt)
+            direction = (cos_alt * math.sin(az), math.sin(alt), cos_alt * math.cos(az))
+            yield self.project(direction, clip=False)
+
+    def draw_meteors(self):
+        now_ticks = pygame.time.get_ticks() / 1000.0
+        for meteor in self.meteors:
+            progress = (now_ticks - meteor["birth"]) / meteor["duration"]
+            if not 0.0 <= progress <= 1.0:
+                continue
+            positions = []
+            for az, alt in (meteor["start"], meteor["end"]):
+                cos_alt = math.cos(alt)
+                positions.append(self.project(
+                    (cos_alt * math.sin(az), math.sin(alt), cos_alt * math.cos(az)),
+                    clip=False))
+            if positions[0] is None or positions[1] is None:
+                continue
+            (x1, y1), (x2, y2) = positions
+            head = (x1 + (x2 - x1) * progress, y1 + (y2 - y1) * progress)
+            tail_t = max(0.0, progress - 0.35)
+            tail = (x1 + (x2 - x1) * tail_t, y1 + (y2 - y1) * tail_t)
+            brightness = int(255 * (1.0 - progress * 0.7))
+            pygame.draw.line(self.screen, (brightness, brightness, brightness),
+                             tail, head, 2)
 
     def draw_horizon(self):
         """Draw the horizon line with cardinal direction markers."""
@@ -573,6 +980,8 @@ class StarryNightApp:
             return 15 * zoom_scale
         if obj.type == "planet":
             return max(3.0, (6.5 - min(obj.mag, 5.5)) * 0.8) * zoom_scale
+        if obj.type in DEEP_SKY_COLORS:
+            return max(6.0, (10 - min(obj.mag, 9.0)) * 1.2) * zoom_scale
         return max(1.0, (6.5 - obj.mag) * 0.55) * zoom_scale
 
     def draw_objects(self, limit: float):
@@ -604,6 +1013,8 @@ class StarryNightApp:
                 self.draw_sun(x, y, radius)
             elif obj.type == "moon":
                 self.draw_moon(x, y, radius)
+            elif obj.type in DEEP_SKY_COLORS:
+                self.draw_deep_sky(obj, x, y, radius, fade)
             else:
                 color = obj.color
                 if obj.type == "star" and obj.mag > 3.5:
@@ -654,10 +1065,53 @@ class StarryNightApp:
         self.screen.blit(surf, (x - center, y - center))
         pygame.draw.circle(self.screen, (160, 160, 150), (x, y), radius, 1)
 
+    def draw_deep_sky(self, obj: CelestialObject, x: int, y: int, radius: int, fade: float):
+        """Type-specific rendering for nebulae, clusters, and galaxies."""
+        size = radius * 2 + 4
+        center = size // 2
+        surf = pygame.Surface((size, size), pygame.SRCALPHA)
+        color = obj.color
+        if obj.type == "nebula":
+            pygame.draw.circle(surf, (*color, int(45 * fade)), (center, center), radius)
+            pygame.draw.circle(surf, (*color, int(75 * fade)), (center, center), int(radius * 0.55))
+        elif obj.type == "planetary":
+            pygame.draw.circle(surf, (*color, int(190 * fade)), (center, center),
+                               max(3, int(radius * 0.7)), 2)
+            pygame.draw.circle(surf, (*color, int(220 * fade)), (center, center), 2)
+        elif obj.type == "globular":
+            for r, alpha in ((radius, 55), (int(radius * 0.55), 95), (int(radius * 0.3), 150)):
+                pygame.draw.circle(surf, (*color, int(alpha * fade)), (center, center), max(1, r))
+        elif obj.type == "open_cluster":
+            for dx, dy, dot_r in self.cluster_dots(obj.name):
+                pygame.draw.circle(surf, (*color, int(200 * fade)),
+                                   (center + int(dx * radius), center + int(dy * radius)), dot_r)
+        else:  # galaxy
+            rect = pygame.Rect(0, 0, size - 2, max(4, radius))
+            rect.center = (center, center)
+            ellipse = pygame.Surface((size, size), pygame.SRCALPHA)
+            pygame.draw.ellipse(ellipse, (*color, int(50 * fade)), rect)
+            inner = rect.inflate(-rect.width // 2, -rect.height // 2)
+            pygame.draw.ellipse(ellipse, (*color, int(95 * fade)), inner)
+            surf.blit(ellipse, (0, 0))
+        self.screen.blit(surf, (x - center, y - center))
+
+    def cluster_dots(self, name: str):
+        """Deterministic scatter of member-star dots for an open cluster."""
+        dots = getattr(self, "_cluster_dot_cache", None)
+        if dots is None:
+            dots = self._cluster_dot_cache = {}
+        if name not in dots:
+            rnd = random.Random(name)
+            dots[name] = [(rnd.uniform(-0.85, 0.85), rnd.uniform(-0.85, 0.85),
+                           rnd.choice((1, 1, 2))) for _ in range(10)]
+        return dots[name]
+
     def draw_tooltip(self, obj: CelestialObject):
         x, y = obj.screen_pos
-        name_text = self.fonts[24].render(obj.name, True, WHITE)
-        parts = [obj.constellation if obj.constellation else obj.type.capitalize()]
+        title = f"{obj.name} ({obj.alias})" if obj.alias else obj.name
+        name_text = self.fonts[24].render(title, True, WHITE)
+        parts = [obj.constellation if obj.constellation
+                 else DEEP_SKY_TYPE_NAMES.get(obj.type, obj.type.capitalize())]
         if obj.type not in ("sun", "moon"):
             parts.append(f"mag {obj.mag:g}")
         dist = obj.distance_text()
@@ -696,12 +1150,21 @@ class StarryNightApp:
             f"{location} | Sun {self.sun_alt_deg:+.0f}° | Moon {self.moon_illumination:.0%} {self.moon_phase_name}",
             True, GRAY)
         self.screen.blit(loc_text, (self.width - loc_text.get_width() - 190, 14))
+        badges = []
         if self.always_night:
-            badge = self.fonts[20].render("ALWAYS NIGHT (N to disable)", True, ACCENT)
-            self.screen.blit(badge, (self.width - badge.get_width() - 190, 48))
+            badges.append("ALWAYS NIGHT (N to disable)")
+        if self.night_vision:
+            badges.append("NIGHT VISION (V to disable)")
+        if self.follow_target and not self.follow_transient:
+            name = (self.follow_target.name if isinstance(self.follow_target, CelestialObject)
+                    else self.follow_target[1])
+            badges.append(f"FOLLOWING {name.upper()} (ESC to stop)")
+        for i, badge_text in enumerate(badges):
+            badge = self.fonts[20].render(badge_text, True, ACCENT)
+            self.screen.blit(badge, (self.width - badge.get_width() - 190, 48 + i * 22))
 
         hint = self.fonts[20].render(
-            "Drag or arrow keys to look around | scroll to zoom | click an object for details | C for help",
+            "Drag to look around | scroll to zoom | S: search | click an object for details | C for help",
             True, GRAY)
         self.screen.blit(hint, (self.width // 2 - hint.get_width() // 2, self.height - 26))
 
@@ -710,11 +1173,16 @@ class StarryNightApp:
             ("Drag / Arrows", "look around"),
             ("Scroll", "zoom in/out"),
             ("Click", "select object"),
+            ("S or /", "search & go to"),
+            ("F", "follow selection"),
+            ("D", "jump to date/time"),
             ("SPACE", "play / pause time"),
             ("+ / -", "time speed"),
             ("R", "reset time"),
+            ("G", "grids / ecliptic"),
             ("K", "constellations"),
             ("N", "always night on/off"),
+            ("V", "night vision (red)"),
             ("L", "toggle labels"),
             ("T", "hide/show selection"),
             ("C", "toggle this panel"),
@@ -732,10 +1200,49 @@ class StarryNightApp:
             panel.blit(self.fonts[20].render(action, True, LIGHT_GRAY), (140, y))
         self.screen.blit(panel, (16, 56))
 
+    def rise_set_text(self, obj: CelestialObject) -> str:
+        """Today's rise/set times for the object, cached per object and date."""
+        local_now = self.time_manager.current_time.astimezone()
+        key = (obj.name, local_now.date())
+        cached = self._riseset_cache.get(key)
+        if cached is not None:
+            return cached
+        if len(self._riseset_cache) > 200:
+            self._riseset_cache.clear()
+
+        def radec_at(dt):
+            if obj.type == "sun":
+                return astronomy.sun_position(dt)[:2]
+            if obj.type == "moon":
+                return astronomy.moon_position(dt)[:2]
+            if obj.type == "planet":
+                return astronomy.planet_position(obj.name, dt)[:2]
+            return obj.ra, obj.dec
+
+        day_start = local_now.replace(hour=0, minute=0, second=0,
+                                      microsecond=0).astimezone(datetime.timezone.utc)
+        rise, set_ = astronomy.rise_set_times(radec_at, day_start,
+                                              self.latitude, self.longitude)
+        if rise is None and set_ is None:
+            text = "Circumpolar (always up)" if obj.altitude > 0 else "Below the horizon all day"
+        else:
+            parts = []
+            if rise:
+                parts.append(f"Rises {rise.astimezone():%H:%M}")
+            if set_:
+                parts.append(f"Sets {set_.astimezone():%H:%M}")
+            text = " | ".join(parts)
+        self._riseset_cache[key] = text
+        return text
+
     def draw_info_panel(self, obj: CelestialObject):
         type_names = {"sun": "Star (our own)", "moon": "Moon", "planet": "Planet",
                       "galaxy": "Galaxy", "star": "Star"}
-        lines = [(type_names[obj.type], LIGHT_BLUE)]
+        type_names.update(DEEP_SKY_TYPE_NAMES)
+        type_line = type_names[obj.type]
+        if obj.alias:
+            type_line = f"{type_line} — {obj.alias}"
+        lines = [(type_line, LIGHT_BLUE)]
         if obj.constellation:
             lines.append((f"Constellation: {obj.constellation}", LIGHT_GRAY))
         dist = obj.distance_text()
@@ -747,9 +1254,10 @@ class StarryNightApp:
             lines.append((f"Magnitude: {obj.mag:g}", LIGHT_GRAY))
         lines.append((f"Azimuth {math.degrees(obj.azimuth):.1f}° | Altitude {math.degrees(obj.altitude):+.1f}°",
                       LIGHT_GRAY))
+        lines.append((self.rise_set_text(obj), LIGHT_GRAY))
         if obj.info:
             lines.append((obj.info, WHITE))
-        lines.append(("T: hide/show   ESC: deselect", GRAY))
+        lines.append(("F: follow   T: hide/show   ESC: deselect", GRAY))
 
         width, row_h = 360, 22
         height = 48 + len(lines) * row_h
@@ -760,6 +1268,35 @@ class StarryNightApp:
         for i, (line, color) in enumerate(lines):
             panel.blit(self.fonts[20].render(line, True, color), (12, 42 + i * row_h))
         self.screen.blit(panel, (self.width - width - 16, self.height - height - 40))
+
+    def draw_input_panel(self):
+        """Search or date-entry box, centered under the top bar."""
+        prompt = "Search object or constellation:" if self.input_mode == "search" \
+            else "Jump to date/time (YYYY-MM-DD [HH:MM]):"
+        rows = [prompt, self.input_text + "_"]
+        if self.input_error:
+            rows.append(self.input_error)
+        matches = self.search_matches if self.input_mode == "search" else []
+
+        width = 420
+        height = 16 + len(rows) * 26 + len(matches) * 22 + (8 if matches else 0)
+        panel = pygame.Surface((width, height), pygame.SRCALPHA)
+        panel.fill(PANEL_BG)
+        pygame.draw.rect(panel, PANEL_BORDER, (0, 0, width, height), 1)
+        y = 10
+        panel.blit(self.fonts[20].render(prompt, True, LIGHT_GRAY), (12, y))
+        y += 26
+        panel.blit(self.fonts[26].render(self.input_text + "_", True, WHITE), (12, y))
+        y += 26
+        if self.input_error:
+            panel.blit(self.fonts[20].render(self.input_error, True, (255, 120, 100)), (12, y))
+            y += 26
+        for i, (label, _) in enumerate(matches):
+            color = ACCENT if i == self.input_selection else LIGHT_GRAY
+            prefix = "> " if i == self.input_selection else "   "
+            panel.blit(self.fonts[20].render(prefix + label, True, color), (12, y + 4))
+            y += 22
+        self.screen.blit(panel, (self.width // 2 - width // 2, 60))
 
     # -------------------------------------------------------------------- run
 

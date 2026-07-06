@@ -10,6 +10,8 @@ for the Moon — plenty for a visual planetarium.
 import datetime
 import math
 
+from .catalog import METEOR_SHOWERS
+
 J2000 = datetime.datetime(2000, 1, 1, 12, tzinfo=datetime.timezone.utc)
 OBLIQUITY = math.radians(23.4393)
 TWO_PI = 2 * math.pi
@@ -148,6 +150,66 @@ def moon_position(dt: datetime.datetime):
     dist_km = 385001.0 - 20905.0 * math.cos(mean_anom)
     ra, dec = ecliptic_to_equatorial(lon, lat)
     return ra, dec, dist_km
+
+
+def rise_set_times(radec_at, day_start: datetime.datetime, latitude: float, longitude: float):
+    """Find rise and set times in the 24 hours after day_start.
+
+    radec_at is a callable dt -> (ra, dec), so this works for fixed stars
+    and moving bodies alike. Scans in 20-minute steps and refines each
+    horizon crossing by bisection. Returns (rise, set) datetimes; either
+    is None when no crossing occurs (circumpolar or never up).
+    """
+    sin_lat, cos_lat = math.sin(latitude), math.cos(latitude)
+
+    def altitude(dt):
+        ra, dec = radec_at(dt)
+        lst = local_sidereal_time(dt, longitude)
+        _, alt = equatorial_to_horizontal(
+            math.sin(dec), math.cos(dec), ra, lst, sin_lat, cos_lat)
+        return alt
+
+    def refine(lo, hi, rising):
+        for _ in range(8):
+            mid = lo + (hi - lo) / 2
+            if (altitude(mid) > 0) == rising:
+                hi = mid
+            else:
+                lo = mid
+        return lo + (hi - lo) / 2
+
+    rise = set_ = None
+    step = datetime.timedelta(minutes=20)
+    prev_time, prev_up = day_start, altitude(day_start) > 0
+    for i in range(1, 73):
+        t = day_start + step * i
+        up = altitude(t) > 0
+        if up != prev_up:
+            if up and rise is None:
+                rise = refine(prev_time, t, rising=True)
+            elif not up and set_ is None:
+                set_ = refine(prev_time, t, rising=False)
+        prev_time, prev_up = t, up
+    return rise, set_
+
+
+def shower_activity(dt: datetime.datetime):
+    """Active meteor showers at dt: list of (name, radiant_ra, radiant_dec, rate).
+
+    Rate is the zenithal hourly rate scaled down away from the peak date.
+    """
+    active = []
+    for name, ra_h, dec_d, (month, day), window, zhr in METEOR_SHOWERS:
+        delta = None
+        for year in (dt.year - 1, dt.year, dt.year + 1):
+            peak = datetime.datetime(year, month, day, tzinfo=datetime.timezone.utc)
+            days = (dt - peak).total_seconds() / 86400.0
+            if delta is None or abs(days) < abs(delta):
+                delta = days
+        if abs(delta) <= window:
+            rate = zhr * math.exp(-abs(delta) / 3.0)
+            active.append((name, math.radians(ra_h * 15), math.radians(dec_d), rate))
+    return active
 
 
 def moon_phase(dt: datetime.datetime):

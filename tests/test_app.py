@@ -116,6 +116,104 @@ def test_always_night_keeps_the_sky_dark(app):
     assert app.effective_sun_alt() == app.sun_alt_deg
 
 
+def test_deep_sky_objects_present(app):
+    by_alias = {o.alias: o for o in app.objects if o.alias}
+    assert by_alias["M42"].name == "Orion Nebula"
+    assert by_alias["M45"].type == "open_cluster"
+    assert by_alias["M13"].type == "globular"
+    assert by_alias["M57"].type == "planetary"
+    assert len(by_alias) >= 25
+
+
+def test_search_matches_names_aliases_and_constellations(app):
+    labels = [label for label, _ in app.find_matches("orio")]
+    assert any("Orion Nebula" in label for label in labels)
+    assert any("constellation" in label for label in labels)
+    label, target = app.find_matches("m42")[0]
+    assert target.name == "Orion Nebula"
+    assert app.find_matches("jupit")[0][1].name == "Jupiter"
+    assert app.find_matches("xyzzy") == []
+
+
+def test_search_go_to_eases_camera_toward_target(app):
+    jupiter = next(p for p in app.planets if p.name == "Jupiter")
+    app.open_input("search")
+    app.input_text = "jupiter"
+    app.search_matches = app.find_matches(app.input_text)
+    app.commit_search()
+    assert app.selected_object is jupiter and app.follow_target is jupiter
+    before = abs(app.wrap_angle(jupiter.azimuth - app.yaw))
+    for _ in range(60):
+        app.follow_camera(1 / 30)
+    after = abs(app.wrap_angle(jupiter.azimuth - app.yaw))
+    assert after < before / 10 and after < math.radians(1)
+    assert app.follow_target is None  # transient go-to stops on arrival
+
+
+def test_follow_tracks_moving_object_through_time(app):
+    app.selected_object = app.moon
+    app.handle_key(pygame.K_f)
+    for _ in range(30):
+        app.follow_camera(1 / 30)
+    app.time_manager.current_time += datetime.timedelta(hours=2)
+    app.update_sky()
+    app.follow_camera(1 / 30)
+    assert abs(app.wrap_angle(app.moon.azimuth - app.yaw)) < math.radians(1.5)
+    assert app.follow_target is app.moon  # persistent follow keeps tracking
+
+
+def test_date_jump_sets_simulation_time(app):
+    app.open_input("date")
+    app.input_text = "1990-05-17 22:30"
+    app.commit_date()
+    assert app.input_mode is None
+    local = app.time_manager.current_time.astimezone()
+    assert (local.year, local.month, local.day, local.hour, local.minute) == (1990, 5, 17, 22, 30)
+
+    app.open_input("date")
+    app.input_text = "not a date"
+    app.commit_date()
+    assert app.input_mode == "date" and app.input_error
+
+
+def test_rise_set_times_for_sun_and_stars(app):
+    app.open_input("date")
+    app.input_text = "2026-07-05 12:00"
+    app.commit_date()
+    # Amsterdam summer: sunrise ~05:30, sunset ~22:00 (geometric, no refraction)
+    sun_text = app.rise_set_text(app.sun)
+    assert "Rises 05:" in sun_text and ("Sets 21:" in sun_text or "Sets 22:" in sun_text)
+    polaris = app.stars_by_name["Polaris"]
+    assert "Circumpolar" in app.rise_set_text(polaris)
+    acrux = app.stars_by_name["Acrux"]  # dec -63: never up from Amsterdam
+    assert "Below the horizon" in app.rise_set_text(acrux)
+
+
+def test_meteor_shower_activity():
+    from starry_night import astronomy
+    peak = datetime.datetime(2026, 8, 12, tzinfo=datetime.timezone.utc)
+    active = astronomy.shower_activity(peak)
+    assert any(name == "Perseids" and rate > 80 for name, _, _, rate in active)
+    quiet = astronomy.shower_activity(datetime.datetime(2026, 3, 10, tzinfo=datetime.timezone.utc))
+    assert quiet == []
+
+
+def test_visual_modes_render(app):
+    # Grids, night vision, milky way, meteors, and the input panel all draw
+    app.grid_mode = 1
+    app.draw()
+    app.grid_mode = 2
+    app.night_vision = True
+    app.meteors.append(app.make_meteor(math.radians(180), math.radians(45),
+                                       pygame.time.get_ticks() / 1000.0))
+    app.draw()
+    app.open_input("search")
+    app.input_text = "m4"
+    app.search_matches = app.find_matches(app.input_text)
+    app.draw()
+    assert len(app.milky_way) > 300
+
+
 def test_frames_render_and_window_resizes(app):
     for _ in range(3):
         app.update()
